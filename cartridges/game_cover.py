@@ -34,6 +34,7 @@ class GameCover:
     path: Optional[Path]
     animation: Optional[GdkPixbuf.PixbufAnimation]
     anim_iter: Optional[GdkPixbuf.PixbufAnimationIter]
+    pending_load: bool = False
 
     placeholder = Gdk.Texture.new_from_resource(
         shared.PREFIX + "/library_placeholder.svg"
@@ -42,32 +43,50 @@ class GameCover:
         shared.PREFIX + "/library_placeholder_small.svg"
     )
 
-    def __init__(self, pictures: set[Gtk.Picture], path: Optional[Path] = None) -> None:
+    def __init__(
+        self, pictures: set[Gtk.Picture], path: Optional[Path] = None, lazy: bool = False
+    ) -> None:
         self.pictures = pictures
-        self.new_cover(path)
+        self.new_cover(path, lazy)
 
-    def new_cover(self, path: Optional[Path] = None) -> None:
+    def new_cover(self, path: Optional[Path] = None, lazy: bool = False) -> None:
         self.animation = None
         self.texture = None
         self.blurred = None
         self.luminance = None
         self.path = path
+        self.pending_load = bool(path and lazy)
 
-        if path:
-            if path.suffix == ".gif":
-                self.animation = GdkPixbuf.PixbufAnimation.new_from_file(str(path))
+        if self.pending_load:
+            self.set_texture(None)
+            return
+
+        self.load()
+
+    def load(self) -> None:
+        if not self.pending_load and (self.texture or self.animation or not self.path):
+            if not self.animation:
+                self.set_texture(self.texture)
+            return
+
+        self.pending_load = False
+
+        if self.path:
+            if self.path.suffix == ".gif":
+                self.animation = GdkPixbuf.PixbufAnimation.new_from_file(str(self.path))
                 self.anim_iter = self.animation.get_iter()
                 self.task = Gio.Task.new()
                 self.task.run_in_thread(
                     lambda *_: self.update_animation((self.task, self.animation))
                 )
             else:
-                self.texture = Gdk.Texture.new_from_filename(str(path))
+                self.texture = Gdk.Texture.new_from_filename(str(self.path))
 
         if not self.animation:
             self.set_texture(self.texture)
 
     def get_texture(self) -> Gdk.Texture:
+        self.load()
         return (
             Gdk.Texture.new_for_pixbuf(self.animation.get_static_image())
             if self.animation
@@ -75,6 +94,7 @@ class GameCover:
         )
 
     def get_blurred(self) -> Gdk.Texture:
+        self.load()
         if not self.blurred:
             if self.path:
                 with Image.open(self.path) as image:
@@ -105,6 +125,7 @@ class GameCover:
 
     def add_picture(self, picture: Gtk.Picture) -> None:
         self.pictures.add(picture)
+        self.load()
         if not self.animation:
             self.set_texture(self.texture)
         else:

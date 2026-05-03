@@ -54,7 +54,11 @@ class DisplayManager(Manager):
             game.game_cover = shared.win.game_covers[game.game_id]
             game.game_cover.add_picture(game.cover)
         else:
-            game.game_cover = GameCover({game.cover}, game.get_cover_path())
+            game.game_cover = GameCover(
+                {game.cover},
+                game.get_cover_path(),
+                lazy=shared.win.get_application().state == shared.AppState.LOAD_FROM_DISK,
+            )
             shared.win.game_covers[game.game_id] = game.game_cover
 
         if (

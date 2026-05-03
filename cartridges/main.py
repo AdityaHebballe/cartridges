@@ -61,11 +61,14 @@ from cartridges.window import CartridgesWindow
 
 class CartridgesApplication(Adw.Application):
     startup_load_batch_size = 50
+    startup_cover_batch_size = 10
     state = shared.AppState.DEFAULT
     win: CartridgesWindow
     init_search_term: Optional[str] = None
     startup_game_files: list[Path]
     startup_load_index: int = 0
+    startup_cover_ids: list[str]
+    startup_cover_index: int = 0
 
     def __init__(self) -> None:
         shared.store = Store()
@@ -247,6 +250,10 @@ class CartridgesApplication(Adw.Application):
         shared.win.set_library_child()
         shared.win.create_source_rows()
 
+        self.startup_cover_ids = list(shared.win.game_covers)
+        self.startup_cover_index = 0
+        GLib.idle_add(self.load_startup_covers_batch)
+
         # Add rest of the managers for game imports
         shared.store.add_manager(CoverManager())
         shared.store.add_manager(SteamAPIManager())
@@ -255,6 +262,19 @@ class CartridgesApplication(Adw.Application):
 
         if shared.schema.get_boolean("auto-import"):
             self.on_import_action()
+
+    def load_startup_covers_batch(self) -> bool:
+        end_index = min(
+            self.startup_cover_index + self.startup_cover_batch_size,
+            len(self.startup_cover_ids),
+        )
+
+        while self.startup_cover_index < end_index:
+            cover = shared.win.game_covers[self.startup_cover_ids[self.startup_cover_index]]
+            cover.load()
+            self.startup_cover_index += 1
+
+        return self.startup_cover_index < len(self.startup_cover_ids)
 
     def get_source_name(self, source_id: str) -> Any:
         if source_id == "all":
