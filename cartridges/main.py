@@ -21,6 +21,7 @@ import json
 import lzma
 import shlex
 import sys
+from pathlib import Path
 from time import time
 from typing import Any, Optional
 from urllib.parse import quote
@@ -59,9 +60,12 @@ from cartridges.window import CartridgesWindow
 
 
 class CartridgesApplication(Adw.Application):
+    startup_load_batch_size = 50
     state = shared.AppState.DEFAULT
     win: CartridgesWindow
     init_search_term: Optional[str] = None
+    startup_game_files: list[Path]
+    startup_load_index: int = 0
 
     def __init__(self) -> None:
         shared.store = Store()
@@ -116,19 +120,9 @@ class CartridgesApplication(Adw.Application):
             "is-maximized", shared.win, "maximized", Gio.SettingsBindFlags.DEFAULT
         )
 
-        # Load games from disk
+        # Prepare the store for startup loading
         shared.store.add_manager(FileManager(), False)
         shared.store.add_manager(DisplayManager())
-        self.state = shared.AppState.LOAD_FROM_DISK
-        self.load_games_from_disk()
-        self.state = shared.AppState.DEFAULT
-        shared.win.create_source_rows()
-
-        # Add rest of the managers for game imports
-        shared.store.add_manager(CoverManager())
-        shared.store.add_manager(SteamAPIManager())
-        shared.store.add_manager(SgdbManager())
-        shared.store.toggle_manager_in_pipelines(FileManager, True)
 
         # Create actions
         self.create_actions(
@@ -175,9 +169,7 @@ class CartridgesApplication(Adw.Application):
             shared.win.search_entry.set_position(-1)
 
         shared.win.present()
-
-        if shared.schema.get_boolean("auto-import"):
-            self.on_import_action()
+        self.start_load_games_from_disk()
 
     def do_handle_local_options(self, options: GLib.VariantDict) -> int:
         if search := options.lookup_value("search"):
@@ -217,15 +209,52 @@ class CartridgesApplication(Adw.Application):
             return 0
         return -1
 
-    def load_games_from_disk(self) -> None:
-        if shared.games_dir.is_dir():
-            for game_file in shared.games_dir.iterdir():
-                try:
-                    data = json.load(game_file.open())
-                except (OSError, json.decoder.JSONDecodeError):
-                    continue
-                game = Game(data)
-                shared.store.add_game(game, {"skip_save": True})
+    def start_load_games_from_disk(self) -> None:
+        self.startup_game_files = (
+            sorted(shared.games_dir.iterdir()) if shared.games_dir.is_dir() else []
+        )
+        self.startup_load_index = 0
+        self.state = shared.AppState.LOAD_FROM_DISK
+        GLib.idle_add(self.load_games_from_disk_batch)
+
+    def load_games_from_disk_batch(self) -> bool:
+        end_index = min(
+            self.startup_load_index + self.startup_load_batch_size,
+            len(self.startup_game_files),
+        )
+
+        while self.startup_load_index < end_index:
+            self.load_game_file(self.startup_game_files[self.startup_load_index])
+            self.startup_load_index += 1
+
+        if self.startup_load_index < len(self.startup_game_files):
+            return True
+
+        self.finish_startup_load()
+        return False
+
+    def load_game_file(self, game_file: Path) -> None:
+        try:
+            data = json.load(game_file.open())
+        except (OSError, json.decoder.JSONDecodeError):
+            return
+
+        game = Game(data)
+        shared.store.add_game(game, {"skip_save": True})
+
+    def finish_startup_load(self) -> None:
+        self.state = shared.AppState.DEFAULT
+        shared.win.set_library_child()
+        shared.win.create_source_rows()
+
+        # Add rest of the managers for game imports
+        shared.store.add_manager(CoverManager())
+        shared.store.add_manager(SteamAPIManager())
+        shared.store.add_manager(SgdbManager())
+        shared.store.toggle_manager_in_pipelines(FileManager, True)
+
+        if shared.schema.get_boolean("auto-import"):
+            self.on_import_action()
 
     def get_source_name(self, source_id: str) -> Any:
         if source_id == "all":
