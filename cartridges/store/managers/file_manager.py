@@ -21,6 +21,7 @@ import json
 
 from cartridges import shared
 from cartridges.game import Game
+from cartridges.game_data import persisted_game_values
 from cartridges.store.managers.async_manager import AsyncManager
 from cartridges.store.managers.steam_api_manager import SteamAPIManager
 
@@ -37,22 +38,8 @@ class FileManager(AsyncManager):
 
         shared.games_dir.mkdir(parents=True, exist_ok=True)
 
-        attrs = (
-            "added",
-            "executable",
-            "game_id",
-            "source",
-            "hidden",
-            "last_played",
-            "name",
-            "developer",
-            "removed",
-            "blacklisted",
-            "version",
-        )
-
         json.dump(
-            {attr: getattr(game, attr) for attr in attrs if attr},
+            persisted_game_values(game),
             (shared.games_dir / f"{game.game_id}.json").open("w", encoding="utf-8"),
             indent=4,
             sort_keys=True,

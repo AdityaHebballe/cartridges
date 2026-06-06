@@ -20,6 +20,7 @@ install_data(
     'preferences.py',
     'details_dialog.py',
     'game.py',
+    'game_data.py',
     'game_cover.py',
     'game_sort_filter.py',
     configure_file(input: 'shared.py.in', output: 'shared.py', configuration: conf),

@@ -32,6 +32,7 @@ class Store:
     managers: dict[type[Manager], Manager]
     pipeline_managers: set[Manager]
     pipelines: dict[str, Pipeline]
+    games: dict[str, Game]
     source_games: MutableMapping[str, MutableMapping[str, Game]]
     new_game_ids: set[str]
     duplicate_game_ids: set[str]
@@ -40,6 +41,7 @@ class Store:
         self.managers = {}
         self.pipeline_managers = set()
         self.pipelines = {}
+        self.games = {}
         self.source_games = {}
         self.new_game_ids = set()
         self.duplicate_game_ids = set()
@@ -48,9 +50,7 @@ class Store:
         """Check if the game is present in the store with the `in` keyword"""
         if not isinstance(obj, Game):
             return False
-        if not (source_mapping := self.source_games.get(obj.base_source)):
-            return False
-        return obj.game_id in source_mapping
+        return self.games.get(obj.game_id) == obj
 
     def __iter__(self) -> Generator[Game, None, None]:
         """Iterate through the games in the store with `for ... in`"""
@@ -60,14 +60,14 @@ class Store:
 
     def __len__(self) -> int:
         """Get the number of games in the store with the `len` builtin"""
-        return sum(len(source_mapping) for source_mapping in self.source_games.values())
+        return len(self.games)
 
     def __getitem__(self, game_id: str) -> Game:
         """Get a game by its id with `store["game_id_goes_here"]`"""
-        for game in iter(self):
-            if game.game_id == game_id:
-                return game
-        raise KeyError("Game not found in store")
+        try:
+            return self.games[game_id]
+        except KeyError as error:
+            raise KeyError("Game not found in store") from error
 
     def get(self, game_id: str, default: Any = None) -> Game | Any:
         """Get a game by its ID, with a fallback if not found"""
@@ -153,6 +153,7 @@ class Store:
         # Add the game to the store
         if not game.base_source in self.source_games:
             self.source_games[game.base_source] = {}
+        self.games[game.game_id] = game
         self.source_games[game.base_source][game.game_id] = game
 
         # Run the pipeline for the game

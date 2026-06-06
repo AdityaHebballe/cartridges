@@ -17,7 +17,6 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import shlex
 from pathlib import Path
 from time import time
 from typing import Any, Optional
@@ -25,6 +24,7 @@ from typing import Any, Optional
 from gi.repository import Adw, GObject, Gtk
 
 from cartridges import shared
+from cartridges.game_data import normalize_game_values
 from cartridges.game_cover import GameCover
 from cartridges.utils.run_executable import run_executable
 
@@ -82,10 +82,7 @@ class Game(Gtk.Box):
         shared.schema.connect("changed", self.schema_changed)
 
     def update_values(self, data: dict[str, Any]) -> None:
-        for key, value in data.items():
-            # Convert executables to strings
-            if key == "executable" and isinstance(value, list):
-                value = shlex.join(value)
+        for key, value in normalize_game_values(data).items():
             setattr(self, key, value)
 
     def update(self) -> None:
