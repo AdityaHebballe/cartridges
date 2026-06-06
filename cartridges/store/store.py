@@ -108,6 +108,9 @@ class Store:
         """Add a manager to the store"""
         manager_type = type(manager)
         self.managers[manager_type] = manager
+        for game in self.games.values():
+            for signal in manager.signals:
+                game.connect(signal, manager.run)
         self.toggle_manager_in_pipelines(manager_type, in_pipeline)
 
     def toggle_manager_in_pipelines(

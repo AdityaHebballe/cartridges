@@ -58,6 +58,22 @@ class SteamSourceIterable(SourceIterable):
             )
         return manifests
 
+    def get_shortcuts(self) -> Iterable[Path]:
+        """Get Steam non-Steam shortcut files."""
+
+        data_dir = self.source.locations.data.root
+        return data_dir.glob("userdata/*/config/shortcuts.vdf")
+
+    def get_shortcut_cover_path(self, grid_dir: Path, appid: str) -> Path:
+        """Get the best local portrait artwork for a Steam shortcut."""
+
+        for suffix in ("p.png", ".png", ".jpg"):
+            path = grid_dir / f"{appid}{suffix}"
+            if path.is_file():
+                return path
+
+        return grid_dir / f"{appid}p.png"
+
     def __iter__(self):
         """Generator method producing games"""
         appid_cache = set()
@@ -104,6 +120,54 @@ class SteamSourceIterable(SourceIterable):
             additional_data = {"local_image_path": image_path, "steam_appid": appid}
 
             yield (game, additional_data)
+
+        for shortcuts_path in self.get_shortcuts():
+            steam = SteamFileHelper()
+            try:
+                shortcuts = steam.get_shortcut_data(shortcuts_path)
+            except (OSError, SteamInvalidManifestError) as error:
+                logging.debug("Couldn't load shortcuts %s", shortcuts_path, exc_info=error)
+                continue
+
+            for shortcut in shortcuts:
+                appid = shortcut["shortcut_appid"]
+                if shortcut["hidden"]:
+                    logging.debug("Skipped Steam shortcut %s: hidden", appid)
+                    continue
+                executable = shortcut["executable"]
+                if executable and Path(executable).is_absolute() and not Path(
+                    executable
+                ).is_file():
+                    logging.debug(
+                        "Skipped Steam shortcut %s: executable missing (%s)",
+                        appid,
+                        executable,
+                    )
+                    continue
+                if appid in appid_cache:
+                    logging.debug(
+                        "Skipped Steam shortcut %s: appid already seen during import",
+                        appid,
+                    )
+                    continue
+                appid_cache.add(appid)
+
+                values = {
+                    "added": shared.import_time,
+                    "name": shortcut["name"],
+                    "source": self.source.source_id,
+                    "game_id": self.source.game_id_format.format(game_id=appid),
+                    "executable": self.source.make_executable(game_id=appid),
+                }
+                game = Game(values)
+                additional_data = {
+                    "local_image_path": self.get_shortcut_cover_path(
+                        shortcut["grid_dir"],
+                        shortcut["appid"],
+                    )
+                }
+
+                yield (game, additional_data)
 
 
 class SteamLocations(NamedTuple):

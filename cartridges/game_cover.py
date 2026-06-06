@@ -19,7 +19,13 @@
 
 from io import BytesIO
 from pathlib import Path
-from typing import Optional
+from typing import ClassVar, Optional
+
+import gi
+
+gi.require_version("Gdk", "4.0")
+gi.require_version("GdkPixbuf", "2.0")
+gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
@@ -37,14 +43,28 @@ class GameCover:
     pending_load: bool = False
     animation_next_frame_at: float = 0
 
-    placeholder = Gdk.Texture.new_from_resource(
-        shared.PREFIX + "/library_placeholder.svg"
-    )
-    placeholder_small = Gdk.Texture.new_from_resource(
-        shared.PREFIX + "/library_placeholder_small.svg"
-    )
-    active_animations = set()
-    animation_tick_id = 0
+    _placeholder: ClassVar[Optional[Gdk.Texture]] = None
+    _placeholder_small: ClassVar[Optional[Gdk.Texture]] = None
+    active_animations: ClassVar[set["GameCover"]] = set()
+    animation_tick_id: ClassVar[int] = 0
+
+    @classmethod
+    def get_placeholder(cls) -> Gdk.Texture:
+        if not cls._placeholder:
+            cls._placeholder = Gdk.Texture.new_from_resource(
+                shared.PREFIX + "/library_placeholder.svg"
+            )
+
+        return cls._placeholder
+
+    @classmethod
+    def get_placeholder_small(cls) -> Gdk.Texture:
+        if not cls._placeholder_small:
+            cls._placeholder_small = Gdk.Texture.new_from_resource(
+                shared.PREFIX + "/library_placeholder_small.svg"
+            )
+
+        return cls._placeholder_small
 
     def __init__(
         self, pictures: set[Gtk.Picture], path: Optional[Path] = None, lazy: bool = False
@@ -84,12 +104,26 @@ class GameCover:
         if self.path:
             self.migrate_legacy_tiff()
             if self.path.suffix == ".gif":
-                self.load_animation(False)
+                self.load_animation_static_frame()
             else:
                 self.texture = Gdk.Texture.new_from_filename(str(self.path))
 
-        if not self.animation or not hasattr(self, "task"):
+        if not self.animation:
             self.set_texture(self.texture)
+
+    def poster_path(self) -> Optional[Path]:
+        if not self.path or self.path.suffix != ".gif":
+            return None
+
+        return self.path.with_suffix(".poster.png")
+
+    def load_animation_static_frame(self) -> None:
+        if poster_path := self.poster_path():
+            if poster_path.is_file():
+                self.texture = Gdk.Texture.new_from_filename(str(poster_path))
+                return
+
+        self.load_animation(False)
 
     def migrate_legacy_tiff(self) -> None:
         if not self.path or self.path.suffix != ".tiff":
@@ -116,11 +150,17 @@ class GameCover:
 
         self.animation = GdkPixbuf.PixbufAnimation.new_from_file(str(self.path))
         self.anim_iter = self.animation.get_iter()
+        static_image = self.animation.get_static_image()
 
         if animate:
             self.start_animation()
         else:
-            self.texture = Gdk.Texture.new_for_pixbuf(self.animation.get_static_image())
+            self.texture = Gdk.Texture.new_for_pixbuf(static_image)
+            if poster_path := self.poster_path():
+                try:
+                    static_image.savev(str(poster_path), "png")
+                except GLib.GError:
+                    pass
 
     def get_texture(self) -> Gdk.Texture:
         self.load()
@@ -155,7 +195,7 @@ class GameCover:
                         max((stat.mean[0] + stat.extrema[0][1]) / 510, 0.3),
                     )
             else:
-                self.blurred = self.placeholder_small
+                self.blurred = self.get_placeholder_small()
                 self.luminance = (0.3, 0.5)
 
         return self.blurred
@@ -163,7 +203,7 @@ class GameCover:
     def add_picture(self, picture: Gtk.Picture, load: bool = True) -> None:
         self.pictures.add(picture)
         if not load:
-            picture.set_paintable(self.texture or self.placeholder)
+            picture.set_paintable(self.texture or self.get_placeholder())
             return
 
         self.load()
@@ -179,11 +219,16 @@ class GameCover:
             self.stop_animation()
         else:
             for picture in self.pictures:
-                picture.set_paintable(texture or self.placeholder)
+                picture.set_paintable(texture or self.get_placeholder())
                 picture.queue_draw()
 
     def start_animation(self) -> None:
-        self.load()
+        if self.pending_load:
+            self.load()
+        if self.path and self.path.suffix == ".gif" and not self.animation:
+            self.load_animation(True)
+        else:
+            self.load()
         if (
             not self.animation
             or not self.anim_iter
@@ -203,6 +248,11 @@ class GameCover:
         if reset and self.animation:
             self.texture = Gdk.Texture.new_for_pixbuf(self.animation.get_static_image())
             self.set_texture(self.texture)
+
+    @classmethod
+    def stop_all_animations(cls) -> None:
+        for cover in list(cls.active_animations):
+            cover.stop_animation()
 
     @classmethod
     def ensure_animation_tick(cls) -> None:

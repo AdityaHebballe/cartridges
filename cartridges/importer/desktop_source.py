@@ -19,6 +19,7 @@
 
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import NamedTuple
@@ -97,8 +98,9 @@ class DesktopSourceIterable(SourceIterable):
                     continue
 
                 try:
-                    try_exec = "which " + keyfile.get_string("Desktop Entry", "TryExec")
-                    if not self.check_command(try_exec):
+                    if not self.check_executable(
+                        keyfile.get_string("Desktop Entry", "TryExec")
+                    ):
                         continue
 
                 except GLib.Error:
@@ -175,15 +177,25 @@ class DesktopSourceIterable(SourceIterable):
 
                 yield (game, additional_data)
 
-    def check_command(self, command) -> bool:
-        flatpak_str = "flatpak-spawn --host /bin/sh -c "
+    def check_executable(self, executable: str) -> bool:
+        executable = shlex.split(executable)[0]
+        if Path(executable).is_absolute():
+            return Path(executable).is_file()
 
+        return shutil.which(executable) is not None
+
+    def check_command(self, command: list[str]) -> bool:
         if os.getenv("FLATPAK_ID") == shared.APP_ID:
-            command = flatpak_str + shlex.quote(command)
+            command = ["flatpak-spawn", "--host", *command]
 
         try:
-            subprocess.run(command, shell=True, check=True)
-        except subprocess.CalledProcessError:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
             return False
 
         return True
@@ -194,11 +206,12 @@ class DesktopSourceIterable(SourceIterable):
 
         for command, full_path in commands:
             # Even if `gio` is available, `gio launch` is only available on GLib >= 2.67.2
-            command_to_check = (
-                "gio help launch" if command == "gio launch" else f"which {command}"
-            )
+            if command == "gio launch":
+                command_available = self.check_command(["gio", "help", "launch"])
+            else:
+                command_available = self.check_executable(command)
 
-            if self.check_command(command_to_check):
+            if command_available:
                 return command, full_path
 
         return commands[2]

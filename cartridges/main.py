@@ -38,11 +38,6 @@ from gi.repository import Adw, Gio, GLib, Gtk
 from cartridges import shared
 from cartridges.game import Game
 from cartridges.logging.setup import log_system_info, setup_logging
-from cartridges.store.managers.cover_manager import CoverManager
-from cartridges.store.managers.display_manager import DisplayManager
-from cartridges.store.managers.file_manager import FileManager
-from cartridges.store.managers.sgdb_manager import SgdbManager
-from cartridges.store.managers.steam_api_manager import SteamAPIManager
 from cartridges.store.store import Store
 from cartridges.utils.run_executable import run_executable
 from cartridges.window import CartridgesWindow
@@ -177,10 +172,6 @@ class CartridgesApplication(Adw.Application):
         shared.state_schema.bind(
             "is-maximized", shared.win, "maximized", Gio.SettingsBindFlags.DEFAULT
         )
-
-        # Prepare the store for startup loading
-        shared.store.add_manager(FileManager(), False)
-        shared.store.add_manager(DisplayManager())
 
         # Create actions
         self.create_actions(
@@ -343,19 +334,27 @@ class CartridgesApplication(Adw.Application):
         self.profile_add("final library/sidebar refresh", perf_counter() - started_at)
         self.profile_mark("library/sidebar ready")
 
-        # Add rest of the managers for game imports
+        # Add managers after disk load so imports do not block first paint.
+        from cartridges.store.managers.cover_manager import CoverManager
+        from cartridges.store.managers.display_manager import DisplayManager
+        from cartridges.store.managers.file_manager import FileManager
+        from cartridges.store.managers.sgdb_manager import SgdbManager
+        from cartridges.store.managers.steam_api_manager import SteamAPIManager
+
+        shared.store.add_manager(FileManager())
+        shared.store.add_manager(DisplayManager())
         shared.store.add_manager(CoverManager())
         shared.store.add_manager(SteamAPIManager())
         shared.store.add_manager(SgdbManager())
-        shared.store.toggle_manager_in_pipelines(FileManager, True)
 
         GLib.idle_add(self.finish_startup_ready, priority=GLib.PRIORITY_LOW)
 
     def finish_startup_ready(self) -> bool:
         started_at = perf_counter()
-        visible_covers = shared.win.load_visible_covers()
-        self.profile_add("load visible startup covers", perf_counter() - started_at)
-        self.profile_mark(f"loaded {visible_covers} visible startup covers")
+        visible_covers = len(shared.win.get_visible_cover_widgets())
+        shared.win.queue_visible_cover_load()
+        self.profile_add("queue visible startup covers", perf_counter() - started_at)
+        self.profile_mark(f"queued {visible_covers} visible startup covers")
         self.profile_report()
         self.maybe_auto_import()
         return False

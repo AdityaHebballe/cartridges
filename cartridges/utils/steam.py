@@ -21,6 +21,7 @@
 import json
 import logging
 import re
+import struct
 from pathlib import Path
 from typing import TypedDict
 
@@ -53,6 +54,17 @@ class SteamManifestData(TypedDict):
     name: str
     appid: str
     stateflags: str
+
+
+class SteamShortcutData(TypedDict):
+    """Dict returned by SteamFileHelper.get_shortcut_data"""
+
+    appid: str
+    shortcut_appid: str
+    name: str
+    executable: str
+    hidden: bool
+    grid_dir: Path
 
 
 class SteamAPIData(TypedDict):
@@ -112,6 +124,63 @@ class SteamFileHelper:
             appid=data["appid"],
             stateflags=data["stateflags"],
         )
+
+    def get_shortcut_data(self, shortcut_path: Path) -> list[SteamShortcutData]:
+        """Get local non-Steam shortcut data from Steam's binary VDF file."""
+
+        data = shortcut_path.read_bytes()
+        offset = 0
+        shortcuts = []
+
+        def read_cstring() -> str:
+            nonlocal offset
+            end = data.index(b"\x00", offset)
+            value = data[offset:end].decode("utf-8", errors="replace")
+            offset = end + 1
+            return value
+
+        def read_object() -> dict:
+            nonlocal offset
+            values = {}
+            while offset < len(data):
+                value_type = data[offset]
+                offset += 1
+                if value_type == 8:
+                    break
+
+                key = read_cstring()
+                if value_type == 0:
+                    values[key] = read_object()
+                elif value_type == 1:
+                    values[key] = read_cstring()
+                elif value_type == 2:
+                    values[key] = struct.unpack_from("<i", data, offset)[0]
+                    offset += 4
+                else:
+                    raise SteamInvalidManifestError()
+
+            return values
+
+        parsed = read_object().get("shortcuts", {})
+        grid_dir = shortcut_path.parent / "grid"
+        for shortcut in parsed.values():
+            if not all(key in shortcut for key in ("appid", "AppName")):
+                continue
+
+            appid = int(shortcut["appid"]) & 0xFFFFFFFF
+            shortcut_appid = str((appid << 32) | 0x02000000)
+            shortcuts.append(
+                SteamShortcutData(
+                    appid=str(appid),
+                    shortcut_appid=shortcut_appid,
+                    name=shortcut["AppName"],
+                    executable=shortcut.get("Exe", "").strip('"'),
+                    hidden=bool(shortcut.get("IsHidden", 0)),
+                    grid_dir=grid_dir,
+                )
+            )
+
+        return shortcuts
 
 
 class SteamAPIHelper:

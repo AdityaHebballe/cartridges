@@ -96,6 +96,9 @@ class CartridgesWindow(Adw.ApplicationWindow):
     hidden_library_sorter: Gtk.CustomSorter
     library_sort_model: Gtk.SortListModel
     hidden_library_sort_model: Gtk.SortListModel
+    cover_load_source_ids: dict[bool, int]
+    cover_load_queues: dict[bool, list[GameWidget]]
+    cover_animation_pause_source_id: int = 0
 
     def create_source_rows(self) -> None:
         def get_removed(source_id: str) -> Any:
@@ -249,6 +252,9 @@ class CartridgesWindow(Adw.ApplicationWindow):
         if shared.PROFILE == "development":
             self.add_css_class("devel")
 
+        self.cover_load_source_ids = {}
+        self.cover_load_queues = {}
+
         # Connect search entries
         self.search_bar.connect_entry(self.search_entry)
         self.hidden_search_bar.connect_entry(self.hidden_search_entry)
@@ -261,14 +267,15 @@ class CartridgesWindow(Adw.ApplicationWindow):
         self.hidden_search_entry.connect("activate", self.show_details_page_search)
 
         self.scrolledwindow.get_vadjustment().connect(
-            "value-changed", lambda *_: self.load_visible_covers()
+            "value-changed", lambda *_: self.queue_visible_cover_load()
         )
         self.hidden_scrolledwindow.get_vadjustment().connect(
-            "value-changed", lambda *_: self.load_visible_covers(True)
+            "value-changed", lambda *_: self.queue_visible_cover_load(True)
         )
 
         self.navigation_view.connect("popped", self.set_show_hidden)
         self.navigation_view.connect("pushed", self.set_show_hidden)
+        self.connect("notify::is-active", self.set_cover_animation_state)
 
         self.sidebar.connect("row-selected", self.row_selected)
 
@@ -360,7 +367,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
     ) -> int:
         return compare_games(item1.game, item2.game, self.sort_state)
 
-    def load_visible_covers(self, hidden: bool = False) -> int:
+    def get_visible_cover_widgets(self, hidden: bool = False) -> list[GameWidget]:
         library = self.hidden_library if hidden else self.library
         scrolledwindow = self.hidden_scrolledwindow if hidden else self.scrolledwindow
         adjustment = scrolledwindow.get_vadjustment()
@@ -368,7 +375,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
         viewport_bottom = (
             adjustment.get_value() + adjustment.get_page_size() * 2
         )
-        loaded = 0
+        visible = []
         for child in self.iter_game_widgets(library):
             success, bounds = child.compute_bounds(library)
             if not success:
@@ -380,6 +387,13 @@ class CartridgesWindow(Adw.ApplicationWindow):
                 child.game.game_cover.stop_animation()
                 continue
 
+            visible.append((child_top, child))
+
+        return [child for _child_top, child in sorted(visible, key=lambda item: item[0])]
+
+    def load_visible_covers(self, hidden: bool = False) -> int:
+        loaded = 0
+        for child in self.get_visible_cover_widgets(hidden):
             child.game.game_cover.load()
             child.game.game_cover.start_animation()
             loaded += 1
@@ -399,10 +413,52 @@ class CartridgesWindow(Adw.ApplicationWindow):
         return games
 
     def queue_visible_cover_load(self, hidden: bool = False) -> None:
-        GLib.idle_add(
-            lambda: (self.load_visible_covers(hidden), False)[1],
+        self.cover_load_queues[hidden] = self.get_visible_cover_widgets(hidden)
+        if self.cover_load_source_ids.get(hidden):
+            return
+
+        self.cover_load_source_ids[hidden] = GLib.idle_add(
+            self.load_queued_covers,
+            hidden,
             priority=GLib.PRIORITY_LOW,
         )
+
+    def load_queued_covers(self, hidden: bool) -> bool:
+        queue = self.cover_load_queues.get(hidden, [])
+        batch_size = 4
+        for child in queue[:batch_size]:
+            child.game.game_cover.load()
+            child.game.game_cover.start_animation()
+
+        del queue[:batch_size]
+        if queue:
+            return True
+
+        self.cover_load_source_ids.pop(hidden, None)
+        self.cover_load_queues.pop(hidden, None)
+        return False
+
+    def set_cover_animation_state(self, *_args: Any) -> None:
+        if self.is_active():
+            if self.cover_animation_pause_source_id:
+                GLib.source_remove(self.cover_animation_pause_source_id)
+                self.cover_animation_pause_source_id = 0
+            self.queue_visible_cover_load(
+                self.navigation_view.get_visible_page() == self.hidden_library_page
+            )
+        else:
+            if self.cover_animation_pause_source_id:
+                return
+            self.cover_animation_pause_source_id = GLib.timeout_add_seconds(
+                12,
+                self.pause_cover_animations,
+            )
+
+    def pause_cover_animations(self) -> bool:
+        self.cover_animation_pause_source_id = 0
+        if not self.is_active():
+            GameCover.stop_all_animations()
+        return False
 
     def search_changed(self, _widget: Any, hidden: bool) -> None:
         # Refresh search filter on keystroke in search box

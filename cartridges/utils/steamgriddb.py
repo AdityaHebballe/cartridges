@@ -68,7 +68,10 @@ class SgdbHelper:
         res = requests.get(uri, headers=self.auth_headers, timeout=5)
         match res.status_code:
             case 200:
-                return res.json()["data"][0]["id"]
+                data = res.json()["data"]
+                if len(data) == 0:
+                    raise SgdbGameNotFound(res.status_code)
+                return data[0]["id"]
             case 401:
                 raise SgdbAuthError(res.json()["errors"][0])
             case 404:
