@@ -96,6 +96,7 @@ class Store:
         """Remove a game's files, dismiss any loose toasts"""
         for path in (
             shared.games_dir / f"{game.game_id}.json",
+            shared.covers_dir / f"{game.game_id}.png",
             shared.covers_dir / f"{game.game_id}.tiff",
             shared.covers_dir / f"{game.game_id}.gif",
         ):

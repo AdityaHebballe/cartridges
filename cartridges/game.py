@@ -164,6 +164,10 @@ class Game(Gtk.Box):
         if cover_path.is_file():
             return cover_path  # type: ignore
 
+        cover_path = shared.covers_dir / f"{self.game_id}.png"
+        if cover_path.is_file():
+            return cover_path  # type: ignore
+
         cover_path = shared.covers_dir / f"{self.game_id}.tiff"
         if cover_path.is_file():
             return cover_path  # type: ignore

@@ -21,6 +21,7 @@ install_data(
     'details_dialog.py',
     'game.py',
     'game_cover.py',
+    'game_sort_filter.py',
     configure_file(input: 'shared.py.in', output: 'shared.py', configuration: conf),
   ],
   install_dir: moduledir,

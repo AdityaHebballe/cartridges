@@ -45,8 +45,8 @@ def convert_cover(
         return cover_path
 
     if pixbuf:
-        cover_path = Path(Gio.File.new_tmp("XXXXXX.tiff")[0].get_path())
-        pixbuf.savev(str(cover_path), "tiff")
+        cover_path = Path(Gio.File.new_tmp("XXXXXX.png")[0].get_path())
+        pixbuf.savev(str(cover_path), "png")
 
     try:
         with Image.open(cover_path) as image:
@@ -69,17 +69,16 @@ def convert_cover(
                 if image.mode not in ("RGB", "RGBA"):
                     image = image.convert("RGBA")
 
-                tmp_path = Path(Gio.File.new_tmp("XXXXXX.tiff")[0].get_path())
+                tmp_path = Path(Gio.File.new_tmp("XXXXXX.png")[0].get_path())
                 (image.resize(shared.image_size) if resize else image).save(
                     tmp_path,
-                    compression="tiff_adobe_deflate"
-                    if shared.schema.get_boolean("high-quality-images")
-                    else shared.TIFF_COMPRESSION,
+                    format="PNG",
+                    optimize=True,
                 )
     except UnidentifiedImageError:
         try:
-            Gdk.Texture.new_from_filename(str(cover_path)).save_to_tiff(
-                tmp_path := Gio.File.new_tmp("XXXXXX.tiff")[0].get_path()
+            Gdk.Texture.new_from_filename(str(cover_path)).save_to_png(
+                tmp_path := Gio.File.new_tmp("XXXXXX.png")[0].get_path()
             )
             return convert_cover(tmp_path)
         except GLib.Error:
@@ -92,11 +91,13 @@ def save_cover(game_id: str, cover_path: Path) -> None:
     shared.covers_dir.mkdir(parents=True, exist_ok=True)
 
     animated_path = shared.covers_dir / f"{game_id}.gif"
-    static_path = shared.covers_dir / f"{game_id}.tiff"
+    static_path = shared.covers_dir / f"{game_id}.png"
+    legacy_static_path = shared.covers_dir / f"{game_id}.tiff"
 
     # Remove previous covers
     animated_path.unlink(missing_ok=True)
     static_path.unlink(missing_ok=True)
+    legacy_static_path.unlink(missing_ok=True)
 
     if not cover_path:
         return

@@ -25,6 +25,7 @@ from typing import Any, Optional
 from cartridges import shared
 from cartridges.game import Game
 from cartridges.game_cover import GameCover
+from cartridges.game_sort_filter import compare_games, game_is_visible
 from cartridges.utils.relative_date import relative_date
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
@@ -162,7 +163,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
 
             row.append(
                 games_no_label := Gtk.Label(
-                    label=games_no,
+                    label=str(games_no),
                     hexpand=True,
                     halign=Gtk.Align.END,
                 )
@@ -211,6 +212,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
 
         self.filter_state = value
         self.library.invalidate_filter()
+        self.queue_visible_cover_load()
 
         if self.overlay_split_view.get_collapsed():
             self.overlay_split_view.set_show_sidebar(False)
@@ -254,6 +256,13 @@ class CartridgesWindow(Adw.ApplicationWindow):
         self.search_entry.connect("activate", self.show_details_page_search)
         self.hidden_search_entry.connect("activate", self.show_details_page_search)
 
+        self.scrolledwindow.get_vadjustment().connect(
+            "value-changed", lambda *_: self.load_visible_covers()
+        )
+        self.hidden_scrolledwindow.get_vadjustment().connect(
+            "value-changed", lambda *_: self.load_visible_covers(True)
+        )
+
         self.navigation_view.connect("popped", self.set_show_hidden)
         self.navigation_view.connect("pushed", self.set_show_hidden)
 
@@ -281,9 +290,44 @@ class CartridgesWindow(Adw.ApplicationWindow):
             self.library.set_max_children_per_line(10)
             self.hidden_library.set_max_children_per_line(10)
 
+    def load_visible_covers(self, hidden: bool = False) -> int:
+        library = self.hidden_library if hidden else self.library
+        scrolledwindow = self.hidden_scrolledwindow if hidden else self.scrolledwindow
+        adjustment = scrolledwindow.get_vadjustment()
+        viewport_top = adjustment.get_value() - adjustment.get_page_size()
+        viewport_bottom = (
+            adjustment.get_value() + adjustment.get_page_size() * 2
+        )
+        loaded = 0
+        index = 0
+
+        while child := library.get_child_at_index(index):
+            index += 1
+            success, bounds = child.compute_bounds(library)
+            if not success:
+                continue
+
+            child_top = bounds.get_y()
+            child_bottom = child_top + bounds.get_height()
+            if child_bottom < viewport_top or child_top > viewport_bottom:
+                continue
+
+            if game := child.get_child():
+                game.game_cover.load()
+                loaded += 1
+
+        return loaded
+
+    def queue_visible_cover_load(self, hidden: bool = False) -> None:
+        GLib.idle_add(
+            lambda: (self.load_visible_covers(hidden), False)[1],
+            priority=GLib.PRIORITY_LOW,
+        )
+
     def search_changed(self, _widget: Any, hidden: bool) -> None:
         # Refresh search filter on keystroke in search box
         (self.hidden_library if hidden else self.library).invalidate_filter()
+        self.queue_visible_cover_load(hidden)
 
     def set_library_child(self) -> None:
         child, hidden_child = self.notice_empty, self.hidden_notice_empty
@@ -330,16 +374,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
             .lower()
         )
 
-        filtered = text != "" and not (
-            text in game.name.lower()
-            or (text in game.developer.lower() if game.developer else False)
-        )
-
-        if not filtered:
-            if self.filter_state == "all":
-                pass
-            elif game.base_source != self.filter_state:
-                filtered = True
+        filtered = not game_is_visible(game, text, self.filter_state)
 
         game.filtered = filtered
         self.set_library_child()
@@ -414,26 +449,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
         )
 
     def sort_func(self, child1: Gtk.Widget, child2: Gtk.Widget) -> int:
-        var, order = "name", True
-
-        if self.sort_state in ("newest", "oldest"):
-            var, order = "added", self.sort_state == "newest"
-        elif self.sort_state == "last_played":
-            var = "last_played"
-        elif self.sort_state == "a-z":
-            order = False
-
-        def get_value(index: int) -> str:
-            return (
-                str(getattr((child1.get_child(), child2.get_child())[index], var))
-                .lower()
-                .removeprefix("the ")
-            )
-
-        if var != "name" and get_value(0) == get_value(1):
-            var, order = "name", False
-
-        return ((get_value(0) > get_value(1)) ^ order) * 2 - 1
+        return compare_games(child1.get_child(), child2.get_child(), self.sort_state)
 
     def set_show_hidden(self, navigation_view: Adw.NavigationView, *_args: Any) -> None:
         self.lookup_action("show_hidden").set_enabled(
@@ -458,11 +474,13 @@ class CartridgesWindow(Adw.ApplicationWindow):
             return
 
         self.navigation_view.push(self.hidden_library_page)
+        self.queue_visible_cover_load(True)
 
     def on_sort_action(self, action: Gio.SimpleAction, state: GLib.Variant) -> None:
         action.set_state(state)
         self.sort_state = str(state).strip("'")
         self.library.invalidate_sort()
+        self.queue_visible_cover_load()
 
         shared.state_schema.set_string("sort-mode", self.sort_state)
 

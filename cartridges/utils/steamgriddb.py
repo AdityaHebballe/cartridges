@@ -104,12 +104,15 @@ class SgdbHelper:
             return
 
         image_trunk = shared.covers_dir / game.game_id
-        still = image_trunk.with_suffix(".tiff")
+        still = image_trunk.with_suffix(".png")
+        legacy_still = image_trunk.with_suffix(".tiff")
         animated = image_trunk.with_suffix(".gif")
         prefer_sgdb = shared.schema.get_boolean("sgdb-prefer")
 
         # Do nothing if file present and not prefer SGDB
-        if not prefer_sgdb and (still.is_file() or animated.is_file()):
+        if not prefer_sgdb and (
+            still.is_file() or legacy_still.is_file() or animated.is_file()
+        ):
             return
 
         # Get ID for the game

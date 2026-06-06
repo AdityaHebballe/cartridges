@@ -77,3 +77,4 @@ class DisplayManager(Manager):
         if shared.win.get_application().state == shared.AppState.DEFAULT:
             shared.win.set_library_child()
             shared.win.create_source_rows()
+            shared.win.queue_visible_cover_load(game.hidden)

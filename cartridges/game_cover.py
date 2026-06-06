@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
 
 from cartridges import shared
 
@@ -72,6 +72,7 @@ class GameCover:
         self.pending_load = False
 
         if self.path:
+            self.migrate_legacy_tiff()
             if self.path.suffix == ".gif":
                 self.animation = GdkPixbuf.PixbufAnimation.new_from_file(str(self.path))
                 self.anim_iter = self.animation.get_iter()
@@ -84,6 +85,25 @@ class GameCover:
 
         if not self.animation:
             self.set_texture(self.texture)
+
+    def migrate_legacy_tiff(self) -> None:
+        if not self.path or self.path.suffix != ".tiff":
+            return
+
+        png_path = self.path.with_suffix(".png")
+        if png_path.is_file():
+            self.path = png_path
+            return
+
+        try:
+            with Image.open(self.path) as image:
+                if image.mode not in ("RGB", "RGBA"):
+                    image = image.convert("RGBA")
+                image.save(png_path, "PNG", optimize=True)
+        except (OSError, UnidentifiedImageError):
+            return
+
+        self.path = png_path
 
     def get_texture(self) -> Gdk.Texture:
         self.load()
@@ -105,7 +125,7 @@ class GameCover:
                     )
 
                     buffer = BytesIO()
-                    image.save(buffer, "tiff", compression=None)
+                    image.save(buffer, "png")
                     gbytes = GLib.Bytes.new(buffer.getvalue())
 
                     self.blurred = Gdk.Texture.new_from_bytes(gbytes)

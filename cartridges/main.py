@@ -19,10 +19,11 @@
 
 import json
 import lzma
+import os
 import shlex
 import sys
 from pathlib import Path
-from time import time
+from time import perf_counter, time
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -35,20 +36,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from cartridges import shared
-from cartridges.details_dialog import DetailsDialog
 from cartridges.game import Game
-from cartridges.importer.bottles_source import BottlesSource
-from cartridges.importer.desktop_source import DesktopSource
-from cartridges.importer.flatpak_source import FlatpakSource
-from cartridges.importer.heroic_source import HeroicSource
-from cartridges.importer.importer import Importer  # yo dawg
-from cartridges.importer.itch_source import ItchSource
-from cartridges.importer.legendary_source import LegendarySource
-from cartridges.importer.lutris_source import LutrisSource
-from cartridges.importer.retroarch_source import RetroarchSource
-from cartridges.importer.steam_source import SteamSource
 from cartridges.logging.setup import log_system_info, setup_logging
-from cartridges.preferences import CartridgesPreferences
 from cartridges.store.managers.cover_manager import CoverManager
 from cartridges.store.managers.display_manager import DisplayManager
 from cartridges.store.managers.file_manager import FileManager
@@ -61,16 +50,36 @@ from cartridges.window import CartridgesWindow
 
 class CartridgesApplication(Adw.Application):
     startup_load_batch_size = 50
-    startup_cover_batch_size = 10
+    source_names = {
+        "bottles": _("Bottles"),
+        "desktop": _("Desktop Entries"),
+        "flatpak": _("Flatpak"),
+        "heroic": _("Heroic"),
+        "itch": _("itch"),
+        "legendary": _("Legendary"),
+        "lutris": _("Lutris"),
+        "retroarch": _("RetroArch"),
+        "steam": _("Steam"),
+    }
     state = shared.AppState.DEFAULT
     win: CartridgesWindow
     init_search_term: Optional[str] = None
     startup_game_files: list[Path]
     startup_load_index: int = 0
-    startup_cover_ids: list[str]
-    startup_cover_index: int = 0
+    startup_profile_enabled: bool
+    startup_profile_started_at: float
+    startup_profile_last_mark: float
+    startup_profile_totals: dict[str, float]
+    startup_profile_counts: dict[str, int]
 
     def __init__(self) -> None:
+        self.startup_profile_enabled = bool(os.getenv("CARTRIDGES_PROFILE_STARTUP"))
+        self.startup_profile_started_at = perf_counter()
+        self.startup_profile_last_mark = self.startup_profile_started_at
+        self.startup_profile_totals = {}
+        self.startup_profile_counts = {}
+        self.profile_mark("application init start")
+
         shared.store = Store()
         super().__init__(application_id=shared.APP_ID)
 
@@ -98,12 +107,54 @@ class CartridgesApplication(Adw.Application):
             if settings := Gtk.Settings.get_default():
                 settings.props.gtk_decoration_layout = "close,minimize,maximize:"
 
+        self.profile_mark("application init done")
+
+    def profile_add(self, name: str, elapsed: float) -> None:
+        if not self.startup_profile_enabled:
+            return
+
+        self.startup_profile_totals[name] = (
+            self.startup_profile_totals.get(name, 0) + elapsed
+        )
+        self.startup_profile_counts[name] = self.startup_profile_counts.get(name, 0) + 1
+
+    def profile_mark(self, name: str) -> None:
+        if not self.startup_profile_enabled:
+            return
+
+        now = perf_counter()
+        print(
+            "[startup] "
+            f"{name}: +{(now - self.startup_profile_last_mark) * 1000:.1f} ms "
+            f"({(now - self.startup_profile_started_at) * 1000:.1f} ms total)",
+            file=sys.stderr,
+        )
+        self.startup_profile_last_mark = now
+
+    def profile_report(self) -> None:
+        if not self.startup_profile_enabled:
+            return
+
+        print("[startup] totals:", file=sys.stderr)
+        for name, elapsed in sorted(
+            self.startup_profile_totals.items(), key=lambda item: item[1], reverse=True
+        ):
+            count = self.startup_profile_counts[name]
+            print(
+                "[startup] "
+                f"  {name}: {elapsed * 1000:.1f} ms "
+                f"across {count} call{'s' if count != 1 else ''}",
+                file=sys.stderr,
+            )
+
     def do_activate(self) -> None:  # pylint: disable=arguments-differ
         """Called on app creation"""
+        self.profile_mark("activation start")
         try:
             setup_logging()
         except ValueError:
             pass
+        self.profile_mark("logging ready")
 
         log_system_info()
 
@@ -111,6 +162,7 @@ class CartridgesApplication(Adw.Application):
         win = self.props.active_window  # pylint: disable=no-member
         if not win:
             shared.win = win = CartridgesWindow(application=self)
+        self.profile_mark("window ready")
 
         # Save window geometry
         shared.state_schema.bind(
@@ -156,6 +208,7 @@ class CartridgesApplication(Adw.Application):
                 ("close", ("<primary>w",), shared.win),
             }
         )
+        self.profile_mark("actions ready")
 
         sort_action = Gio.SimpleAction.new_stateful(
             "sort_by",
@@ -172,6 +225,7 @@ class CartridgesApplication(Adw.Application):
             shared.win.search_entry.set_position(-1)
 
         shared.win.present()
+        self.profile_mark("window presented")
         self.start_load_games_from_disk()
 
     def do_handle_local_options(self, options: GLib.VariantDict) -> int:
@@ -213,14 +267,18 @@ class CartridgesApplication(Adw.Application):
         return -1
 
     def start_load_games_from_disk(self) -> None:
+        started_at = perf_counter()
         self.startup_game_files = (
             sorted(shared.games_dir.iterdir()) if shared.games_dir.is_dir() else []
         )
+        self.profile_add("enumerate game files", perf_counter() - started_at)
+        self.profile_mark(f"found {len(self.startup_game_files)} game files")
         self.startup_load_index = 0
         self.state = shared.AppState.LOAD_FROM_DISK
         GLib.idle_add(self.load_games_from_disk_batch)
 
     def load_games_from_disk_batch(self) -> bool:
+        batch_started_at = perf_counter()
         end_index = min(
             self.startup_load_index + self.startup_load_batch_size,
             len(self.startup_game_files),
@@ -230,29 +288,38 @@ class CartridgesApplication(Adw.Application):
             self.load_game_file(self.startup_game_files[self.startup_load_index])
             self.startup_load_index += 1
 
+        self.profile_add("load game batches", perf_counter() - batch_started_at)
+
         if self.startup_load_index < len(self.startup_game_files):
             return True
 
+        self.profile_mark(f"loaded {len(shared.store)} games from disk")
         self.finish_startup_load()
         return False
 
     def load_game_file(self, game_file: Path) -> None:
+        started_at = perf_counter()
         try:
             data = json.load(game_file.open())
         except (OSError, json.decoder.JSONDecodeError):
             return
+        self.profile_add("read game json", perf_counter() - started_at)
 
+        started_at = perf_counter()
         game = Game(data)
+        self.profile_add("create game widget", perf_counter() - started_at)
+
+        started_at = perf_counter()
         shared.store.add_game(game, {"skip_save": True})
+        self.profile_add("store/display game", perf_counter() - started_at)
 
     def finish_startup_load(self) -> None:
+        started_at = perf_counter()
         self.state = shared.AppState.DEFAULT
         shared.win.set_library_child()
         shared.win.create_source_rows()
-
-        self.startup_cover_ids = list(shared.win.game_covers)
-        self.startup_cover_index = 0
-        GLib.idle_add(self.load_startup_covers_batch)
+        self.profile_add("final library/sidebar refresh", perf_counter() - started_at)
+        self.profile_mark("library/sidebar ready")
 
         # Add rest of the managers for game imports
         shared.store.add_manager(CoverManager())
@@ -260,21 +327,39 @@ class CartridgesApplication(Adw.Application):
         shared.store.add_manager(SgdbManager())
         shared.store.toggle_manager_in_pipelines(FileManager, True)
 
-        if shared.schema.get_boolean("auto-import"):
-            self.on_import_action()
+        GLib.idle_add(self.finish_startup_ready, priority=GLib.PRIORITY_LOW)
 
-    def load_startup_covers_batch(self) -> bool:
-        end_index = min(
-            self.startup_cover_index + self.startup_cover_batch_size,
-            len(self.startup_cover_ids),
-        )
+    def finish_startup_ready(self) -> bool:
+        started_at = perf_counter()
+        visible_covers = shared.win.load_visible_covers()
+        self.profile_add("load visible startup covers", perf_counter() - started_at)
+        self.profile_mark(f"loaded {visible_covers} visible startup covers")
+        self.profile_report()
+        self.maybe_auto_import()
+        return False
 
-        while self.startup_cover_index < end_index:
-            cover = shared.win.game_covers[self.startup_cover_ids[self.startup_cover_index]]
-            cover.load()
-            self.startup_cover_index += 1
+    def maybe_auto_import(self) -> None:
+        if not shared.schema.get_boolean("auto-import"):
+            return
 
-        return self.startup_cover_index < len(self.startup_cover_ids)
+        try:
+            delay = int(os.getenv("CARTRIDGES_AUTO_IMPORT_DELAY_SECONDS", "8"))
+        except ValueError:
+            delay = 8
+
+        self.profile_mark(f"auto-import scheduled in {delay} seconds")
+        if delay <= 0:
+            GLib.idle_add(self.run_scheduled_auto_import, priority=GLib.PRIORITY_LOW)
+        else:
+            GLib.timeout_add_seconds(delay, self.run_scheduled_auto_import)
+
+    def run_scheduled_auto_import(self) -> bool:
+        if self.state != shared.AppState.DEFAULT:
+            return True
+
+        self.profile_mark("auto-import starting")
+        self.on_import_action()
+        return False
 
     def get_source_name(self, source_id: str) -> Any:
         if source_id == "all":
@@ -282,10 +367,7 @@ class CartridgesApplication(Adw.Application):
         elif source_id == "imported":
             name = _("Added")
         else:
-            try:
-                name = globals()[f"{source_id.split('_')[0].title()}Source"].name
-            except KeyError:
-                return source_id
+            name = self.source_names.get(source_id.split("_")[0], source_id)
         return name
 
     def on_about_action(self, *_args: Any) -> None:
@@ -340,7 +422,9 @@ class CartridgesApplication(Adw.Application):
         _parameter: Any = None,
         page_name: Optional[str] = None,
         expander_row: Optional[str] = None,
-    ) -> Optional[CartridgesPreferences]:
+    ) -> Optional[Any]:
+        from cartridges.preferences import CartridgesPreferences
+
         if CartridgesPreferences.is_open:
             return
 
@@ -360,15 +444,30 @@ class CartridgesApplication(Adw.Application):
         shared.win.active_game.toggle_hidden()
 
     def on_edit_game_action(self, *_args: Any) -> None:
+        from cartridges.details_dialog import DetailsDialog
+
         DetailsDialog(shared.win.active_game).present(shared.win)
 
     def on_add_game_action(self, *_args: Any) -> None:
+        from cartridges.details_dialog import DetailsDialog
+
         if DetailsDialog.is_open:
             return
 
         DetailsDialog().present(shared.win)
 
     def on_import_action(self, *_args: Any) -> None:
+        from cartridges.importer.bottles_source import BottlesSource
+        from cartridges.importer.desktop_source import DesktopSource
+        from cartridges.importer.flatpak_source import FlatpakSource
+        from cartridges.importer.heroic_source import HeroicSource
+        from cartridges.importer.importer import Importer  # yo dawg
+        from cartridges.importer.itch_source import ItchSource
+        from cartridges.importer.legendary_source import LegendarySource
+        from cartridges.importer.lutris_source import LutrisSource
+        from cartridges.importer.retroarch_source import RetroarchSource
+        from cartridges.importer.steam_source import SteamSource
+
         shared.importer = Importer()
 
         if shared.schema.get_boolean("lutris"):

@@ -17,10 +17,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import lzma
 from io import TextIOWrapper
 from logging import StreamHandler
-from lzma import FORMAT_XZ, PRESET_DEFAULT
 from os import PathLike
 from pathlib import Path
 from typing import Optional
@@ -31,7 +29,7 @@ from cartridges import shared
 class SessionFileHandler(StreamHandler):
     """
     A logging handler that writes to a new file on every app restart.
-    The files are compressed and older sessions logs are kept up to a small limit.
+    Older session logs are kept up to a small limit.
     """
 
     NUMBER_SUFFIX_POSITION = 1
@@ -86,29 +84,6 @@ class SessionFileHandler(StreamHandler):
 
     def rotate_file(self, path: Path) -> None:
         """Rotate a file's number suffix and remove it if it's too old"""
-
-        # If uncompressed, compress
-        if not path.name.endswith(".xz"):
-            try:
-                with open(path, "r", encoding="utf-8") as original_file:
-                    original_data = original_file.read()
-            except UnicodeDecodeError:
-                # If the file is corrupted, throw it away
-                path.unlink()
-                return
-
-            # Compress the file
-            compressed_path = path.with_suffix(path.suffix + ".xz")
-            with lzma.open(
-                compressed_path,
-                "wt",
-                format=FORMAT_XZ,
-                preset=PRESET_DEFAULT,
-                encoding="utf-8",
-            ) as lzma_file:
-                lzma_file.write(original_data)
-            path.unlink()
-            path = compressed_path
 
         # Rename with new number suffix
         new_number = self.get_path_number(path) + 1
