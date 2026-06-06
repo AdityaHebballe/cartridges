@@ -22,6 +22,7 @@ from typing import Any, Generator, MutableMapping, Optional
 
 from cartridges import shared
 from cartridges.game import Game
+from cartridges.game_cover import GameCover
 from cartridges.game_data import GameObject
 from cartridges.store.managers.manager import Manager
 from cartridges.store.pipeline import Pipeline
@@ -37,6 +38,7 @@ class Store:
     games: dict[str, Game]
     game_model: Gio.ListStore
     game_objects: dict[str, GameObject]
+    pending_game_objects: list[GameObject]
     source_games: MutableMapping[str, MutableMapping[str, Game]]
     new_game_ids: set[str]
     duplicate_game_ids: set[str]
@@ -48,6 +50,7 @@ class Store:
         self.games = {}
         self.game_model = Gio.ListStore.new(GameObject)
         self.game_objects = {}
+        self.pending_game_objects = []
         self.source_games = {}
         self.new_game_ids = set()
         self.duplicate_game_ids = set()
@@ -88,6 +91,18 @@ class Store:
     ) -> GameObject | Any:
         """Get a game model object by its ID, with a fallback if not found"""
         return self.game_objects.get(game_id, default)
+
+    def flush_game_model(self) -> None:
+        """Append deferred game model objects to the list model in one update."""
+        if not self.pending_game_objects:
+            return
+
+        self.game_model.splice(
+            self.game_model.get_n_items(),
+            0,
+            self.pending_game_objects,
+        )
+        self.pending_game_objects = []
 
     def add_manager(self, manager: Manager, in_pipeline: bool = True) -> None:
         """Add a manager to the store"""
@@ -167,8 +182,23 @@ class Store:
             self.source_games[game.base_source] = {}
         self.games[game.game_id] = game
         self.source_games[game.base_source][game.game_id] = game
-        self.game_objects[game.game_id] = GameObject(game)
-        self.game_model.append(self.game_objects[game.game_id])
+
+        if game.game_id in shared.win.game_covers:
+            game.game_cover = shared.win.game_covers[game.game_id]
+        else:
+            game.game_cover = GameCover(
+                set(),
+                game.get_cover_path(),
+                lazy=shared.win.get_application().state == shared.AppState.LOAD_FROM_DISK,
+            )
+            shared.win.game_covers[game.game_id] = game.game_cover
+
+        game_object = GameObject(game)
+        self.game_objects[game.game_id] = game_object
+        if shared.win.get_application().state == shared.AppState.LOAD_FROM_DISK:
+            self.pending_game_objects.append(game_object)
+        else:
+            self.game_model.append(game_object)
 
         # Run the pipeline for the game
         if not run_pipeline:

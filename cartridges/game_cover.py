@@ -21,7 +21,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
 
 from cartridges import shared
@@ -35,6 +35,7 @@ class GameCover:
     animation: Optional[GdkPixbuf.PixbufAnimation]
     anim_iter: Optional[GdkPixbuf.PixbufAnimationIter]
     pending_load: bool = False
+    animation_next_frame_at: float = 0
 
     placeholder = Gdk.Texture.new_from_resource(
         shared.PREFIX + "/library_placeholder.svg"
@@ -42,22 +43,29 @@ class GameCover:
     placeholder_small = Gdk.Texture.new_from_resource(
         shared.PREFIX + "/library_placeholder_small.svg"
     )
+    active_animations = set()
+    animation_tick_id = 0
 
     def __init__(
         self, pictures: set[Gtk.Picture], path: Optional[Path] = None, lazy: bool = False
     ) -> None:
         self.pictures = pictures
+        self.animation = None
+        self.anim_iter = None
+        self.texture = None
+        self.blurred = None
+        self.luminance = None
+        self.path = None
         self.new_cover(path, lazy)
 
     def new_cover(self, path: Optional[Path] = None, lazy: bool = False) -> None:
+        self.stop_animation(reset=True)
         self.animation = None
         self.texture = None
         self.blurred = None
         self.luminance = None
         self.path = path
         self.pending_load = bool(path and lazy)
-        if hasattr(self, "task"):
-            del self.task
 
         if self.pending_load:
             self.set_texture(None)
@@ -110,10 +118,7 @@ class GameCover:
         self.anim_iter = self.animation.get_iter()
 
         if animate:
-            self.task = Gio.Task.new()
-            self.task.run_in_thread(
-                lambda *_: self.update_animation((self.task, self.animation))
-            )
+            self.start_animation()
         else:
             self.texture = Gdk.Texture.new_for_pixbuf(self.animation.get_static_image())
 
@@ -155,34 +160,75 @@ class GameCover:
 
         return self.blurred
 
-    def add_picture(self, picture: Gtk.Picture) -> None:
+    def add_picture(self, picture: Gtk.Picture, load: bool = True) -> None:
         self.pictures.add(picture)
+        if not load:
+            picture.set_paintable(self.texture or self.placeholder)
+            return
+
         self.load()
         if not self.animation:
             self.set_texture(self.texture)
-        elif hasattr(self, "task"):
-            self.update_animation((self.task, self.animation))
 
     def set_texture(self, texture: Gdk.Texture) -> None:
-        self.pictures.discard(
-            picture for picture in self.pictures if not picture.is_visible()
-        )
+        for picture in list(self.pictures):
+            if not picture.is_visible():
+                self.pictures.discard(picture)
+
         if not self.pictures:
-            self.animation = None
+            self.stop_animation()
         else:
             for picture in self.pictures:
                 picture.set_paintable(texture or self.placeholder)
                 picture.queue_draw()
 
-    def update_animation(self, data: GdkPixbuf.PixbufAnimation) -> None:
-        if self.animation == data[1]:
-            self.anim_iter.advance()  # type: ignore
+    def start_animation(self) -> None:
+        self.load()
+        if (
+            not self.animation
+            or not self.anim_iter
+            or self.animation.is_static_image()
+            or not self.pictures
+        ):
+            return
 
-            self.set_texture(Gdk.Texture.new_for_pixbuf(self.anim_iter.get_pixbuf()))  # type: ignore
+        self.active_animations.add(self)
+        self.animation_next_frame_at = 0
+        self.ensure_animation_tick()
 
-            delay_time = self.anim_iter.get_delay_time()  # type: ignore
-            GLib.timeout_add(
-                20 if delay_time < 20 else delay_time,
-                self.update_animation,
-                data,
-            )
+    def stop_animation(self, reset: bool = False) -> None:
+        self.active_animations.discard(self)
+        self.animation_next_frame_at = 0
+
+        if reset and self.animation:
+            self.texture = Gdk.Texture.new_for_pixbuf(self.animation.get_static_image())
+            self.set_texture(self.texture)
+
+    @classmethod
+    def ensure_animation_tick(cls) -> None:
+        if not cls.animation_tick_id:
+            cls.animation_tick_id = GLib.timeout_add(20, cls.animation_tick)
+
+    @classmethod
+    def animation_tick(cls) -> bool:
+        if not cls.active_animations:
+            cls.animation_tick_id = 0
+            return False
+
+        now = GLib.get_monotonic_time() / 1000
+        for cover in list(cls.active_animations):
+            if (
+                not cover.animation
+                or not cover.anim_iter
+                or not cover.pictures
+                or cover.animation_next_frame_at > now
+            ):
+                continue
+
+            cover.anim_iter.advance()
+            cover.set_texture(Gdk.Texture.new_for_pixbuf(cover.anim_iter.get_pixbuf()))
+
+            delay_time = cover.anim_iter.get_delay_time()
+            cover.animation_next_frame_at = now + (20 if delay_time < 20 else delay_time)
+
+        return True

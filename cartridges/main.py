@@ -324,7 +324,7 @@ class CartridgesApplication(Adw.Application):
 
         started_at = perf_counter()
         game = Game(data)
-        self.profile_add("create game widget", perf_counter() - started_at)
+        self.profile_add("create game model", perf_counter() - started_at)
 
         started_at = perf_counter()
         shared.store.add_game(game, {"skip_save": True})
@@ -332,9 +332,14 @@ class CartridgesApplication(Adw.Application):
 
     def finish_startup_load(self) -> None:
         started_at = perf_counter()
+        flush_started_at = perf_counter()
+        shared.store.flush_game_model()
+        self.profile_add("flush game model", perf_counter() - flush_started_at)
+        sidebar_started_at = perf_counter()
         self.state = shared.AppState.DEFAULT
         shared.win.set_library_child()
         shared.win.create_source_rows()
+        self.profile_add("refresh library/sidebar state", perf_counter() - sidebar_started_at)
         self.profile_add("final library/sidebar refresh", perf_counter() - started_at)
         self.profile_mark("library/sidebar ready")
 

@@ -1,14 +1,17 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $Game: Box {
+template $GameWidget: Box {
   orientation: vertical;
   halign: center;
   valign: start;
+  width-request: 200;
+  hexpand: false;
 
   Adw.Clamp {
     maximum-size: 200;
     unit: px;
+    hexpand: false;
 
     Overlay {
       [overlay]
@@ -54,6 +57,8 @@ template $Game: Box {
       Button cover_button {
         name: "cover_button";
         overflow: hidden;
+        width-request: 200;
+        hexpand: false;
 
         accessibility {
           labelled-by: title;
@@ -71,8 +76,8 @@ template $Game: Box {
             Picture cover {
               width-request: 200;
               height-request: 300;
-              hexpand: true;
-              vexpand: true;
+              hexpand: false;
+              vexpand: false;
             }
           }
 

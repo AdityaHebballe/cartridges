@@ -20,11 +20,13 @@
 # pyright: reportAssignmentType=none
 
 from sys import platform
+from time import perf_counter
 from typing import Any, Optional
 
 from cartridges import shared
-from cartridges.game import Game
+from cartridges.game import Game, GameWidget
 from cartridges.game_cover import GameCover
+from cartridges.game_data import GameObject
 from cartridges.game_sort_filter import compare_games, game_is_visible
 from cartridges.utils.relative_date import relative_date
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
@@ -88,6 +90,12 @@ class CartridgesWindow(Adw.ApplicationWindow):
     sort_state: str = "last_played"
     filter_state: str = "all"
     source_rows: dict = {}
+    library_filter: Gtk.CustomFilter
+    hidden_library_filter: Gtk.CustomFilter
+    library_sorter: Gtk.CustomSorter
+    hidden_library_sorter: Gtk.CustomSorter
+    library_sort_model: Gtk.SortListModel
+    hidden_library_sort_model: Gtk.SortListModel
 
     def create_source_rows(self) -> None:
         def get_removed(source_id: str) -> Any:
@@ -211,7 +219,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
         self.library_page.set_title(self.get_application().get_source_name(value))
 
         self.filter_state = value
-        self.library.invalidate_filter()
+        self.invalidate_library_models()
         self.queue_visible_cover_load()
 
         if self.overlay_split_view.get_collapsed():
@@ -226,11 +234,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
         self.details_view.set_measure_overlay(self.details_view_toolbar_view, True)
         self.details_view.set_clip_overlay(self.details_view_toolbar_view, False)
 
-        self.library.set_filter_func(self.filter_func)
-        self.hidden_library.set_filter_func(self.filter_func)
-
-        self.library.set_sort_func(self.sort_func)
-        self.hidden_library.set_sort_func(self.sort_func)
+        self.setup_library_models()
 
         self.set_library_child()
 
@@ -290,6 +294,72 @@ class CartridgesWindow(Adw.ApplicationWindow):
             self.library.set_max_children_per_line(10)
             self.hidden_library.set_max_children_per_line(10)
 
+    def setup_library_models(self) -> None:
+        self.library_filter = Gtk.CustomFilter.new(
+            lambda item: self.filter_model_item(item, False)
+        )
+        self.hidden_library_filter = Gtk.CustomFilter.new(
+            lambda item: self.filter_model_item(item, True)
+        )
+        self.library_sorter = Gtk.CustomSorter.new(self.sort_model_items)
+        self.hidden_library_sorter = Gtk.CustomSorter.new(self.sort_model_items)
+
+        library_filter_model = Gtk.FilterListModel.new(
+            shared.store.game_model, self.library_filter
+        )
+        hidden_library_filter_model = Gtk.FilterListModel.new(
+            shared.store.game_model, self.hidden_library_filter
+        )
+        self.library_sort_model = Gtk.SortListModel.new(
+            library_filter_model, self.library_sorter
+        )
+        self.hidden_library_sort_model = Gtk.SortListModel.new(
+            hidden_library_filter_model, self.hidden_library_sorter
+        )
+
+        self.library.bind_model(self.library_sort_model, self.create_game_widget)
+        self.hidden_library.bind_model(
+            self.hidden_library_sort_model, self.create_game_widget
+        )
+
+    def create_game_widget(self, item: GameObject, *_args: Any) -> Gtk.Widget:
+        if not isinstance(item, GameObject):
+            return Gtk.Box()
+
+        started_at = perf_counter()
+        game_widget = GameWidget(item.game)
+        game_widget.set_size_request(200, -1)
+        self.get_application().profile_add(
+            "bind game widget", perf_counter() - started_at
+        )
+        return game_widget
+
+    def invalidate_library_models(self) -> None:
+        self.library_filter.changed(Gtk.FilterChange.DIFFERENT)
+        self.hidden_library_filter.changed(Gtk.FilterChange.DIFFERENT)
+        self.library_sorter.changed(Gtk.SorterChange.DIFFERENT)
+        self.hidden_library_sorter.changed(Gtk.SorterChange.DIFFERENT)
+
+    def filter_model_item(self, item: GameObject, hidden: bool) -> bool:
+        if not isinstance(item, GameObject):
+            return False
+
+        game = item.game
+        text = (
+            self.hidden_search_entry if hidden else self.search_entry
+        ).get_text().lower()
+        visible = game_is_visible(game, text, self.filter_state)
+
+        game.filtered = not visible
+        if game.removed or game.blacklisted:
+            return False
+        return visible and game.hidden == hidden
+
+    def sort_model_items(
+        self, item1: GameObject, item2: GameObject, *_args: Any
+    ) -> int:
+        return compare_games(item1.game, item2.game, self.sort_state)
+
     def load_visible_covers(self, hidden: bool = False) -> int:
         library = self.hidden_library if hidden else self.library
         scrolledwindow = self.hidden_scrolledwindow if hidden else self.scrolledwindow
@@ -299,10 +369,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
             adjustment.get_value() + adjustment.get_page_size() * 2
         )
         loaded = 0
-        index = 0
-
-        while child := library.get_child_at_index(index):
-            index += 1
+        for child in self.iter_game_widgets(library):
             success, bounds = child.compute_bounds(library)
             if not success:
                 continue
@@ -310,13 +377,26 @@ class CartridgesWindow(Adw.ApplicationWindow):
             child_top = bounds.get_y()
             child_bottom = child_top + bounds.get_height()
             if child_bottom < viewport_top or child_top > viewport_bottom:
+                child.game.game_cover.stop_animation()
                 continue
 
-            if game := child.get_child():
-                game.game_cover.load()
-                loaded += 1
+            child.game.game_cover.load()
+            child.game.game_cover.start_animation()
+            loaded += 1
 
         return loaded
+
+    def iter_game_widgets(self, widget: Gtk.Widget) -> list[GameWidget]:
+        games = []
+        child = widget.get_first_child()
+
+        while child:
+            if isinstance(child, GameWidget):
+                games.append(child)
+            games.extend(self.iter_game_widgets(child))
+            child = child.get_next_sibling()
+
+        return games
 
     def queue_visible_cover_load(self, hidden: bool = False) -> None:
         GLib.idle_add(
@@ -326,7 +406,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
 
     def search_changed(self, _widget: Any, hidden: bool) -> None:
         # Refresh search filter on keystroke in search box
-        (self.hidden_library if hidden else self.library).invalidate_filter()
+        self.invalidate_library_models()
         self.queue_visible_cover_load(hidden)
 
     def set_library_child(self) -> None:
@@ -365,25 +445,6 @@ class CartridgesWindow(Adw.ApplicationWindow):
             remove_from_overlay(self.hidden_notice_empty)
             remove_from_overlay(self.hidden_notice_no_results)
 
-    def filter_func(self, child: Gtk.Widget) -> bool:
-        game = child.get_child()
-        text = (
-            (
-                self.hidden_search_entry
-                if self.navigation_view.get_visible_page() == self.hidden_library_page
-                else self.search_entry
-            )
-            .get_text()
-            .lower()
-        )
-
-        filtered = not game_is_visible(game, text, self.filter_state)
-
-        game.filtered = filtered
-        self.set_library_child()
-
-        return not filtered
-
     def set_active_game(self, _widget: Any, _pspec: Any, game: Game) -> None:
         self.active_game = game
 
@@ -408,6 +469,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
 
         self.details_view_game_cover = game.game_cover
         self.details_view_game_cover.add_picture(self.details_view_cover)
+        self.details_view_game_cover.start_animation()
 
         self.details_view_blurred_cover.set_paintable(
             self.details_view_game_cover.get_blurred()
@@ -451,9 +513,6 @@ class CartridgesWindow(Adw.ApplicationWindow):
             else self.details_view_game_cover.luminance[1]  # type: ignore
         )
 
-    def sort_func(self, child1: Gtk.Widget, child2: Gtk.Widget) -> int:
-        return compare_games(child1.get_child(), child2.get_child(), self.sort_state)
-
     def set_show_hidden(self, navigation_view: Adw.NavigationView, *_args: Any) -> None:
         self.lookup_action("show_hidden").set_enabled(
             navigation_view.get_visible_page() == self.library_page
@@ -482,7 +541,7 @@ class CartridgesWindow(Adw.ApplicationWindow):
     def on_sort_action(self, action: Gio.SimpleAction, state: GLib.Variant) -> None:
         action.set_state(state)
         self.sort_state = str(state).strip("'")
-        self.library.invalidate_sort()
+        self.invalidate_library_models()
         self.queue_visible_cover_load()
 
         shared.state_schema.set_string("sort-mode", self.sort_state)
@@ -505,20 +564,13 @@ class CartridgesWindow(Adw.ApplicationWindow):
         search_entry.set_text("")
 
     def show_details_page_search(self, widget: Gtk.Widget) -> None:
-        library = (
-            self.hidden_library if widget == self.hidden_search_entry else self.library
-        )
-        index = 0
+        hidden = widget == self.hidden_search_entry
 
-        while True:
-            if not (child := library.get_child_at_index(index)):
+        for game in shared.store:
+            game_object = shared.store.get_game_object(game.game_id)
+            if self.filter_model_item(game_object, hidden):
+                self.show_details_page(game)
                 break
-
-            if self.filter_func(child):
-                self.show_details_page(child.get_child())
-                break
-
-            index += 1
 
     def on_undo_action(
         self, _widget: Any, game: Optional[Game] = None, undo: Optional[str] = None

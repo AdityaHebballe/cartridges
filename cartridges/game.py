@@ -25,25 +25,12 @@ from gi.repository import Adw, GObject, Gtk
 
 from cartridges import shared
 from cartridges.game_data import normalize_game_values
-from cartridges.game_cover import GameCover
 from cartridges.utils.run_executable import run_executable
 
 
 # pylint: disable=too-many-instance-attributes
-@Gtk.Template(resource_path=shared.PREFIX + "/gtk/game.ui")
-class Game(Gtk.Box):
-    __gtype_name__ = "Game"
-
-    title = Gtk.Template.Child()
-    play_button = Gtk.Template.Child()
-    cover = Gtk.Template.Child()
-    spinner = Gtk.Template.Child()
-    cover_button = Gtk.Template.Child()
-    menu_button = Gtk.Template.Child()
-    play_revealer = Gtk.Template.Child()
-    menu_revealer = Gtk.Template.Child()
-    game_options = Gtk.Template.Child()
-    hidden_game_options = Gtk.Template.Child()
+class Game(GObject.Object):
+    __gtype_name__ = "CartridgesGame"
 
     loading: int = 0
     filtered: bool = False
@@ -58,7 +45,7 @@ class Game(Gtk.Box):
     developer: Optional[str] = None
     removed: bool = False
     blacklisted: bool = False
-    game_cover: GameCover = None
+    game_cover = None
     version: int = 0
 
     def __init__(self, data: dict[str, Any], **kwargs: Any) -> None:
@@ -69,17 +56,6 @@ class Game(Gtk.Box):
 
         self.update_values(data)
         self.base_source = self.source.split("_")[0]
-
-        self.set_play_icon()
-
-        self.event_contoller_motion = Gtk.EventControllerMotion.new()
-        self.add_controller(self.event_contoller_motion)
-        self.event_contoller_motion.connect("enter", self.toggle_play, False)
-        self.event_contoller_motion.connect("leave", self.toggle_play, None, None)
-        self.cover_button.connect("clicked", self.main_button_clicked, False)
-        self.play_button.connect("clicked", self.main_button_clicked, True)
-
-        shared.schema.connect("changed", self.schema_changed)
 
     def update_values(self, data: dict[str, Any]) -> None:
         for key, value in normalize_game_values(data).items():
@@ -151,10 +127,7 @@ class Game(Gtk.Box):
 
     def set_loading(self, state: int) -> None:
         self.loading += state
-        loading = self.loading > 0
-
-        self.cover.set_opacity(int(not loading))
-        self.spinner.set_visible(loading)
+        self.update()
 
     def get_cover_path(self) -> Optional[Path]:
         cover_path = shared.covers_dir / f"{self.game_id}.gif"
@@ -171,18 +144,93 @@ class Game(Gtk.Box):
 
         return None
 
+    @GObject.Signal(name="update-ready", arg_types=[object])
+    def update_ready(self, _additional_data):  # type: ignore
+        """Signal emitted when the game needs updating"""
+
+    @GObject.Signal(name="save-ready", arg_types=[object])
+    def save_ready(self, _additional_data):  # type: ignore
+        """Signal emitted when the game needs saving"""
+
+
+@Gtk.Template(resource_path=shared.PREFIX + "/gtk/game.ui")
+class GameWidget(Gtk.Box):
+    __gtype_name__ = "GameWidget"
+
+    title = Gtk.Template.Child()
+    play_button = Gtk.Template.Child()
+    cover = Gtk.Template.Child()
+    spinner = Gtk.Template.Child()
+    cover_button = Gtk.Template.Child()
+    menu_button = Gtk.Template.Child()
+    play_revealer = Gtk.Template.Child()
+    menu_revealer = Gtk.Template.Child()
+    game_options = Gtk.Template.Child()
+    hidden_game_options = Gtk.Template.Child()
+
+    game: Game
+    update_signal_id: int
+    schema_signal_id: int
+
+    def __init__(self, game: Game, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+
+        self.game = game
+
+        self.update_from_game()
+
+        self.event_contoller_motion = Gtk.EventControllerMotion.new()
+        self.add_controller(self.event_contoller_motion)
+        self.event_contoller_motion.connect("enter", self.toggle_play, False)
+        self.event_contoller_motion.connect("leave", self.toggle_play, None, None)
+        self.cover_button.connect("clicked", self.main_button_clicked, False)
+        self.play_button.connect("clicked", self.main_button_clicked, True)
+        self.menu_button.get_popover().connect(
+            "notify::visible", self.toggle_play, None
+        )
+        self.menu_button.get_popover().connect(
+            "notify::visible", shared.win.set_active_game, game
+        )
+
+        self.update_signal_id = game.connect("update-ready", self.update_from_game)
+        self.schema_signal_id = shared.schema.connect("changed", self.schema_changed)
+        game.game_cover.add_picture(self.cover, load=not game.game_cover.pending_load)
+
+    def unbind(self) -> None:
+        if self.update_signal_id:
+            self.game.disconnect(self.update_signal_id)
+            self.update_signal_id = 0
+        if self.schema_signal_id:
+            shared.schema.disconnect(self.schema_signal_id)
+            self.schema_signal_id = 0
+        self.game.game_cover.pictures.discard(self.cover)
+
+    def update_from_game(self, *_args: Any) -> None:
+        self.menu_button.set_menu_model(
+            self.hidden_game_options if self.game.hidden else self.game_options
+        )
+        self.title.set_label(self.game.name)
+        self.set_play_icon()
+
+        loading = self.game.loading > 0
+        self.cover.set_opacity(int(not loading))
+        self.spinner.set_visible(loading)
+
     def toggle_play(
         self, _widget: Any, _prop1: Any, _prop2: Any, state: bool = True
     ) -> None:
+        if state is False:
+            self.game.game_cover.start_animation()
+
         if not self.menu_button.get_active():
             self.play_revealer.set_reveal_child(not state)
             self.menu_revealer.set_reveal_child(not state)
 
     def main_button_clicked(self, _widget: Any, button: bool) -> None:
         if shared.schema.get_boolean("cover-launches-game") ^ button:
-            self.launch()
+            self.game.launch()
         else:
-            shared.win.show_details_page(self)
+            shared.win.show_details_page(self.game)
 
     def set_play_icon(self) -> None:
         self.play_button.set_icon_name(
@@ -194,11 +242,3 @@ class Game(Gtk.Box):
     def schema_changed(self, _settings: Any, key: str) -> None:
         if key == "cover-launches-game":
             self.set_play_icon()
-
-    @GObject.Signal(name="update-ready", arg_types=[object])
-    def update_ready(self, _additional_data):  # type: ignore
-        """Signal emitted when the game needs updating"""
-
-    @GObject.Signal(name="save-ready", arg_types=[object])
-    def save_ready(self, _additional_data):  # type: ignore
-        """Signal emitted when the game needs saving"""

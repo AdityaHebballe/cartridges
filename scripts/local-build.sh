@@ -32,9 +32,89 @@ setup() {
   fi
 }
 
+python_paths() {
+  python - <<'PY'
+import site
+import sysconfig
+from pathlib import Path
+
+paths = set()
+
+user_site = site.getusersitepackages()
+if isinstance(user_site, str):
+    paths.add(user_site)
+else:
+    paths.update(user_site)
+
+paths.add(sysconfig.get_path("purelib", vars={"base": "/usr", "platbase": "/usr"}))
+paths.add(sysconfig.get_path("platlib", vars={"base": "/usr", "platbase": "/usr"}))
+
+for path in sorted(Path(path) for path in paths if path):
+    print(path)
+PY
+}
+
+cleanup_stale_python_package() {
+  if [[ "${CARTRIDGES_SKIP_STALE_CLEANUP:-0}" = 1 ]]; then
+    return
+  fi
+
+  local paths=()
+  while IFS= read -r package_root; do
+    [[ -n "${package_root}" ]] || continue
+    if [[ "${PREFIX}" != /usr* && "${package_root}" = /usr/* ]]; then
+      continue
+    fi
+    paths+=("${package_root}/cartridges")
+    paths+=("${package_root}"/cartridges-*.dist-info)
+    paths+=("${package_root}"/cartridges-*.egg-info)
+  done < <(python_paths)
+
+  if (( ${#paths[@]} == 0 )); then
+    return
+  fi
+
+  if [[ "${PREFIX}" = /usr* && "${EUID}" -ne 0 ]]; then
+    sudo rm -rf -- "${paths[@]}"
+  else
+    rm -rf -- "${paths[@]}"
+  fi
+}
+
+quit_running_app() {
+  if [[ "${CARTRIDGES_KEEP_RUNNING:-0}" = 1 ]]; then
+    return
+  fi
+
+  if command -v gapplication >/dev/null; then
+    gapplication quit "$(app_id)" >/dev/null 2>&1 || true
+  fi
+
+  if ! command -v busctl >/dev/null; then
+    return
+  fi
+
+  local pid
+  pid="$(
+    busctl --user list --no-legend 2>/dev/null \
+      | awk -v app="$(app_id)" '$1 == app { print $2; exit }'
+  )"
+
+  if [[ -n "${pid}" && "${pid}" != "-" && "${pid}" != "$$" ]]; then
+    kill "${pid}" >/dev/null 2>&1 || true
+  fi
+}
+
 install_app() {
+  if [[ "${CARTRIDGES_CLEAN_INSTALL:-1}" = 1 ]]; then
+    rm -rf "${BUILD_DIR}"
+  fi
+
+  quit_running_app
+
   setup
   meson compile -C "${BUILD_DIR}"
+  cleanup_stale_python_package
 
   if [[ "${PREFIX}" = /usr* && "${EUID}" -ne 0 ]]; then
     sudo meson install -C "${BUILD_DIR}"
@@ -48,9 +128,7 @@ run_app() {
     install_app
   fi
 
-  if [[ "${CARTRIDGES_KEEP_RUNNING:-0}" != 1 ]] && command -v gapplication >/dev/null; then
-    gapplication quit "$(app_id)" >/dev/null 2>&1 || true
-  fi
+  quit_running_app
 
   if [[ -n "${CARTRIDGES_PROFILE_STARTUP:-}" ]]; then
     export CARTRIDGES_NON_UNIQUE="${CARTRIDGES_NON_UNIQUE:-1}"

@@ -23,6 +23,7 @@ import gettext
 import locale
 import os
 import signal
+import site
 import sys
 from time import perf_counter
 from pathlib import Path
@@ -32,6 +33,9 @@ VERSION = "@VERSION@"
 PROFILE_START = bool(os.getenv("CARTRIDGES_PROFILE_STARTUP"))
 PROFILE_STARTED_AT = perf_counter()
 PROFILE_LAST_MARK = PROFILE_STARTED_AT
+
+if PROFILE_START:
+    os.environ.setdefault("CARTRIDGES_NON_UNIQUE", "1")
 
 
 def profile_mark(name):
@@ -56,6 +60,10 @@ else:
     LOCALEDIR = "@localedir@"
 
 sys.path.insert(1, PKGDATADIR)
+user_site = site.getusersitepackages()
+if isinstance(user_site, str):
+    user_site = (user_site,)
+sys.path = [path for path in sys.path if path not in user_site]
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 profile_mark("paths ready")
 

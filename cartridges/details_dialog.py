@@ -238,6 +238,7 @@ class DetailsDialog(Adw.Dialog):
             shared.win.game_covers[self.game.game_id].animation = None
 
         shared.win.game_covers[self.game.game_id] = self.game_cover
+        self.game.game_cover = self.game_cover
 
         if self.cover_changed:
             save_cover(
