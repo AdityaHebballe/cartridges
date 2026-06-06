@@ -4,13 +4,14 @@
 # yiannis ioannides <sub@wai.ai>, 2023.
 # Weblate Translation Memory <noreply-mt-weblate-translation-memory@weblate.org>, 2025.
 # GiannosOB <giannos2105@gmail.com>, 2025.
+# vcodesai <vcodesai@users.noreply.hosted.weblate.org>, 2026.
 msgid ""
 msgstr ""
 "Project-Id-Version: Cartridges\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-11-05 14:01+0100\n"
-"PO-Revision-Date: 2025-04-24 17:02+0000\n"
-"Last-Translator: GiannosOB <giannos2105@gmail.com>\n"
+"PO-Revision-Date: 2026-05-19 20:14+0000\n"
+"Last-Translator: vcodesai <vcodesai@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Greek <https://hosted.weblate.org/projects/cartridges/"
 "cartridges/el/>\n"
 "Language: el\n"
@@ -18,7 +19,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 5.11.1-dev\n"
+"X-Generator: Weblate 2026.6.dev0\n"
 
 #: data/page.kramo.Cartridges.desktop.in:3
 #: data/page.kramo.Cartridges.metainfo.xml.in:9
@@ -307,7 +308,7 @@ msgstr "SteamGridDB"
 
 #: data/gtk/preferences.blp:357
 msgid "Authentication"
-msgstr "Επιβεβαίωση"
+msgstr "Αυθεντικοποίηση"
 
 #: data/gtk/preferences.blp:360
 msgid "API Key"
@@ -319,11 +320,11 @@ msgstr "Χρήση SteamGridDB"
 
 #: data/gtk/preferences.blp:369
 msgid "Download images when adding or importing games"
-msgstr "Λήψη εικόνων κατά τη διάρκεια πρόσθεσης ή εισαγωγής παιχνιδιών"
+msgstr "Λήψη εικόνων κατά την προσθήκη ή εισαγωγή παιχνιδιών"
 
 #: data/gtk/preferences.blp:373
 msgid "Prefer Over Official Images"
-msgstr "Προτίμηση Επίσημων Εικόνων"
+msgstr "Προτιμήστε τις επίσημες εικόνες"
 
 #: data/gtk/preferences.blp:377
 msgid "Prefer Animated Images"
@@ -343,7 +344,7 @@ msgstr "Ανανέωση"
 
 #: data/gtk/window.blp:6 data/gtk/window.blp:14
 msgid "No Games Found"
-msgstr "Δεν Βρέθηκαν Παιχνίδια"
+msgstr "Δεν βρέθηκαν παιχνίδια"
 
 #: data/gtk/window.blp:7 data/gtk/window.blp:15
 msgid "Try a different search"
@@ -351,7 +352,7 @@ msgstr "Δοκιμάστε μια διαφορετική αναζήτηση"
 
 #: data/gtk/window.blp:21
 msgid "No Games"
-msgstr "Δίχως Παιχνίδια"
+msgstr "Δεν υπάρχουν παιχνίδια"
 
 #: data/gtk/window.blp:22
 msgid "Use the + button to add games"
@@ -395,11 +396,11 @@ msgstr "Ταξινόμηση"
 
 #: data/gtk/window.blp:505
 msgid "A-Z"
-msgstr "Α-Ζ"
+msgstr "A-Z"
 
 #: data/gtk/window.blp:511
 msgid "Z-A"
-msgstr "Ζ-Α"
+msgstr "Z-A"
 
 #: data/gtk/window.blp:517
 msgid "Newest"
@@ -455,7 +456,7 @@ msgstr "Ποτέ"
 #. The variable is the date when the game was last played
 #: cartridges/window.py:389
 msgid "Last played: {}"
-msgstr "Τελευταία αναπαραγωγή: {}"
+msgstr "Τελευταίο παιχνίδι: {}"
 
 #: cartridges/details_dialog.py:82
 msgid "Apply"
@@ -476,7 +477,7 @@ msgstr "Προγράμματα"
 #. Translate this string as you would translate "file"
 #: cartridges/details_dialog.py:117
 msgid "file.txt"
-msgstr "αρχειο.txt"
+msgstr "αρχείο.txt"
 
 #. As in software
 #: cartridges/details_dialog.py:119
@@ -505,7 +506,7 @@ msgid ""
 "\n"
 "If the path contains spaces, make sure to wrap it in double quotes!"
 msgstr ""
-"Για να εκτελέσετε την εφαρμογή \"{}\", χρησιμοποιήστε την εντολή:\n"
+"Για να εκκινήσετε το εκτελέσιμο αρχείο \"{}\", χρησιμοποιήστε την εντολή:\n"
 "\n"
 "<tt>\"{}\"</tt>\n"
 "\n"
@@ -514,7 +515,7 @@ msgstr ""
 "\n"
 "<tt>{} \"{}\"</tt>\n"
 "\n"
-"Αν η διεύθυνση φακέλου περιέχει κενά, φροντίστε να την περικλείσετε σε διπλά "
+"Αν η διαδρομή περιέχει κενά, φροντίστε να την περικλείσετε σε διπλά "
 "εισαγωγικά!"
 
 #: cartridges/details_dialog.py:179 cartridges/details_dialog.py:185
@@ -523,7 +524,7 @@ msgstr "Αδυναμία προσθήκης παιχνιδιού"
 
 #: cartridges/details_dialog.py:179 cartridges/details_dialog.py:221
 msgid "Game title cannot be empty."
-msgstr "Ο τίτλος παιχνιδιού δεν μπορεί να είναι κενός."
+msgstr "Ο τίτλος του παιχνιδιού δεν μπορεί να είναι άδειος."
 
 #: cartridges/details_dialog.py:185 cartridges/details_dialog.py:229
 msgid "Executable cannot be empty."
