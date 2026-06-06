@@ -8,11 +8,15 @@ configure_file(
   install_dir: get_option('bindir'),
 )
 
-install_subdir('importer', install_dir: moduledir)
-install_subdir('utils', install_dir: moduledir)
-install_subdir('store', install_dir: moduledir)
-install_subdir('logging', install_dir: moduledir)
-install_subdir('errors', install_dir: moduledir)
+install_subdir('importer', install_dir: moduledir, exclude_directories: ['__pycache__'])
+install_subdir('utils', install_dir: moduledir, exclude_directories: ['__pycache__'])
+install_subdir(
+  'store',
+  install_dir: moduledir,
+  exclude_directories: ['__pycache__', 'managers/__pycache__'],
+)
+install_subdir('logging', install_dir: moduledir, exclude_directories: ['__pycache__'])
+install_subdir('errors', install_dir: moduledir, exclude_directories: ['__pycache__'])
 install_data(
   [
     'main.py',

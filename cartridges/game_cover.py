@@ -56,6 +56,8 @@ class GameCover:
         self.luminance = None
         self.path = path
         self.pending_load = bool(path and lazy)
+        if hasattr(self, "task"):
+            del self.task
 
         if self.pending_load:
             self.set_texture(None)
@@ -74,16 +76,11 @@ class GameCover:
         if self.path:
             self.migrate_legacy_tiff()
             if self.path.suffix == ".gif":
-                self.animation = GdkPixbuf.PixbufAnimation.new_from_file(str(self.path))
-                self.anim_iter = self.animation.get_iter()
-                self.task = Gio.Task.new()
-                self.task.run_in_thread(
-                    lambda *_: self.update_animation((self.task, self.animation))
-                )
+                self.load_animation(False)
             else:
                 self.texture = Gdk.Texture.new_from_filename(str(self.path))
 
-        if not self.animation:
+        if not self.animation or not hasattr(self, "task"):
             self.set_texture(self.texture)
 
     def migrate_legacy_tiff(self) -> None:
@@ -104,6 +101,21 @@ class GameCover:
             return
 
         self.path = png_path
+
+    def load_animation(self, animate: bool = True) -> None:
+        if not self.path:
+            return
+
+        self.animation = GdkPixbuf.PixbufAnimation.new_from_file(str(self.path))
+        self.anim_iter = self.animation.get_iter()
+
+        if animate:
+            self.task = Gio.Task.new()
+            self.task.run_in_thread(
+                lambda *_: self.update_animation((self.task, self.animation))
+            )
+        else:
+            self.texture = Gdk.Texture.new_for_pixbuf(self.animation.get_static_image())
 
     def get_texture(self) -> Gdk.Texture:
         self.load()
@@ -148,7 +160,7 @@ class GameCover:
         self.load()
         if not self.animation:
             self.set_texture(self.texture)
-        else:
+        elif hasattr(self, "task"):
             self.update_animation((self.task, self.animation))
 
     def set_texture(self, texture: Gdk.Texture) -> None:

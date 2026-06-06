@@ -52,6 +52,10 @@ run_app() {
     gapplication quit "$(app_id)" >/dev/null 2>&1 || true
   fi
 
+  if [[ -n "${CARTRIDGES_PROFILE_STARTUP:-}" ]]; then
+    export CARTRIDGES_NON_UNIQUE="${CARTRIDGES_NON_UNIQUE:-1}"
+  fi
+
   if [[ "${PREFIX}" != /usr* ]]; then
     python_path="$(
       python -c 'import sys, sysconfig; print(sysconfig.get_path("purelib", vars={"base": sys.argv[1], "platbase": sys.argv[1]}))' "${PREFIX}"

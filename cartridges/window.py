@@ -330,6 +330,9 @@ class CartridgesWindow(Adw.ApplicationWindow):
         self.queue_visible_cover_load(hidden)
 
     def set_library_child(self) -> None:
+        if self.get_application().state == shared.AppState.LOAD_FROM_DISK:
+            return
+
         child, hidden_child = self.notice_empty, self.hidden_notice_empty
 
         for game in shared.store:

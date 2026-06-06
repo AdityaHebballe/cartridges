@@ -81,7 +81,10 @@ class CartridgesApplication(Adw.Application):
         self.profile_mark("application init start")
 
         shared.store = Store()
-        super().__init__(application_id=shared.APP_ID)
+        flags = Gio.ApplicationFlags.FLAGS_NONE
+        if os.getenv("CARTRIDGES_NON_UNIQUE"):
+            flags |= Gio.ApplicationFlags.NON_UNIQUE
+        super().__init__(application_id=shared.APP_ID, flags=flags)
 
         search = GLib.OptionEntry()
         search.long_name = "search"
@@ -226,7 +229,20 @@ class CartridgesApplication(Adw.Application):
 
         shared.win.present()
         self.profile_mark("window presented")
-        self.start_load_games_from_disk()
+        self.schedule_startup_load()
+
+    def schedule_startup_load(self) -> None:
+        try:
+            delay = int(os.getenv("CARTRIDGES_STARTUP_LOAD_DELAY_MS", "100"))
+        except ValueError:
+            delay = 100
+
+        self.profile_mark(f"game load scheduled in {delay} ms")
+        self.state = shared.AppState.LOAD_FROM_DISK
+        if delay <= 0:
+            GLib.idle_add(self.start_load_games_from_disk, priority=GLib.PRIORITY_LOW)
+        else:
+            GLib.timeout_add(delay, self.start_load_games_from_disk)
 
     def do_handle_local_options(self, options: GLib.VariantDict) -> int:
         if search := options.lookup_value("search"):
@@ -266,7 +282,7 @@ class CartridgesApplication(Adw.Application):
             return 0
         return -1
 
-    def start_load_games_from_disk(self) -> None:
+    def start_load_games_from_disk(self) -> bool:
         started_at = perf_counter()
         self.startup_game_files = (
             sorted(shared.games_dir.iterdir()) if shared.games_dir.is_dir() else []
@@ -276,6 +292,7 @@ class CartridgesApplication(Adw.Application):
         self.startup_load_index = 0
         self.state = shared.AppState.LOAD_FROM_DISK
         GLib.idle_add(self.load_games_from_disk_batch)
+        return False
 
     def load_games_from_disk_batch(self) -> bool:
         batch_started_at = perf_counter()

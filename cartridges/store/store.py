@@ -22,8 +22,10 @@ from typing import Any, Generator, MutableMapping, Optional
 
 from cartridges import shared
 from cartridges.game import Game
+from cartridges.game_data import GameObject
 from cartridges.store.managers.manager import Manager
 from cartridges.store.pipeline import Pipeline
+from gi.repository import Gio
 
 
 class Store:
@@ -33,6 +35,8 @@ class Store:
     pipeline_managers: set[Manager]
     pipelines: dict[str, Pipeline]
     games: dict[str, Game]
+    game_model: Gio.ListStore
+    game_objects: dict[str, GameObject]
     source_games: MutableMapping[str, MutableMapping[str, Game]]
     new_game_ids: set[str]
     duplicate_game_ids: set[str]
@@ -42,6 +46,8 @@ class Store:
         self.pipeline_managers = set()
         self.pipelines = {}
         self.games = {}
+        self.game_model = Gio.ListStore.new(GameObject)
+        self.game_objects = {}
         self.source_games = {}
         self.new_game_ids = set()
         self.duplicate_game_ids = set()
@@ -76,6 +82,12 @@ class Store:
             return game
         except KeyError:
             return default
+
+    def get_game_object(
+        self, game_id: str, default: Any = None
+    ) -> GameObject | Any:
+        """Get a game model object by its ID, with a fallback if not found"""
+        return self.game_objects.get(game_id, default)
 
     def add_manager(self, manager: Manager, in_pipeline: bool = True) -> None:
         """Add a manager to the store"""
@@ -155,6 +167,8 @@ class Store:
             self.source_games[game.base_source] = {}
         self.games[game.game_id] = game
         self.source_games[game.base_source][game.game_id] = game
+        self.game_objects[game.game_id] = GameObject(game)
+        self.game_model.append(self.game_objects[game.game_id])
 
         # Run the pipeline for the game
         if not run_pipeline:
