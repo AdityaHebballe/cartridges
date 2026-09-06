@@ -7,8 +7,9 @@ import importlib
 import os
 import pkgutil
 import sys
+import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from functools import cache
 from pathlib import Path
 from typing import Final, Protocol, cast
@@ -180,4 +181,45 @@ def update_model():
 def get(ident: str) -> Source:
     """Get the source with `ident`."""
     return all_sources[ident]
+
+
+def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | None = None):
+    """Reload all sources asynchronously in a worker thread."""
+
+    def worker():
+        added_time = int(time.time())
+        scanned: dict[str, list[Game]] = {}
+        for ident, source in list(all_sources.items()):
+            try:
+                scanned[ident] = list(source._get_games(added_time))
+            except OSError:
+                scanned[ident] = []
+
+        def apply():
+            old_game_ids = set()
+            for s in all_sources.values():
+                for i in range(s.get_n_items()):
+                    if g := s.get_item(i):
+                        old_game_ids.add(g.game_id)
+
+            all_games: list[Game] = []
+            for ident, new_games in scanned.items():
+                if source := all_sources.get(ident):
+                    old_len = len(source._games)
+                    source._games = new_games
+                    source.items_changed(0, old_len, len(new_games))
+                    all_games.extend(new_games)
+
+            new_game_ids = {g.game_id for g in all_games}
+            added = new_game_ids - old_game_ids
+            removed = old_game_ids - new_game_ids
+
+            if on_done:
+                on_done(all_games, added, removed)
+            return GLib.SOURCE_REMOVE
+
+        GLib.idle_add(apply)
+
+    threading.Thread(target=worker, daemon=True).start()
+
 

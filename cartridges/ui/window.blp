@@ -58,6 +58,16 @@ template $Window: Adw.ApplicationWindow {
       trigger: bind $shortcut("<Control><Shift>n");
       action: "action(collection.add)";
     }
+
+    Shortcut {
+      trigger: bind $shortcut("<Control>r");
+      action: "action(win.refresh)";
+    }
+
+    Shortcut {
+      trigger: "F5";
+      action: "action(win.refresh)";
+    }
   }
 
   Adw.Breakpoint {
@@ -217,6 +227,13 @@ template $Window: Adw.ApplicationWindow {
                 icon-name: "list-add-symbolic";
                 tooltip-text: _("Add Game");
                 action-name: "game.add";
+              }
+
+              [start]
+              Button refresh_button {
+                icon-name: "view-refresh-symbolic";
+                tooltip-text: _("Refresh Library");
+                action-name: "win.refresh";
               }
 
               [end]

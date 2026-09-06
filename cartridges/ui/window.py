@@ -48,6 +48,7 @@ class Window(Adw.ApplicationWindow):
     title_box: Gtk.CenterBox = Gtk.Template.Child()
     search_entry: Gtk.SearchEntry = Gtk.Template.Child()
     sort_button: Gtk.MenuButton = Gtk.Template.Child()
+    refresh_button: Gtk.Button = Gtk.Template.Child()
     main_menu_button: Gtk.MenuButton = Gtk.Template.Child()
     toast_overlay: Adw.ToastOverlay = Gtk.Template.Child()
     view_stack: Adw.ViewStack = Gtk.Template.Child()
@@ -99,6 +100,7 @@ class Window(Adw.ApplicationWindow):
         self.add_action_entries((
             ("search", lambda *_: self.search_entry.grab_focus()),
             ("undo", lambda *_: self._undo()),
+            ("refresh", lambda *_: self._refresh()),
         ))
 
         self.insert_action_group("game", self.game_actions)
@@ -233,3 +235,32 @@ class Window(Adw.ApplicationWindow):
 
         toast.dismiss()
         undo()
+
+    def _refresh(self, *_args):
+        self.refresh_button.props.sensitive = False
+
+        def on_done(all_games: list[Game], added: set[str], removed: set[str]):
+            self.refresh_button.props.sensitive = True
+
+            if added and removed:
+                self.send_toast(
+                    _("Added {} and removed {} games").format(len(added), len(removed))
+                )
+            elif added:
+                self.send_toast(_("Found {} new game(s)").format(len(added)))
+            elif removed:
+                self.send_toast(_("Removed {} game(s)").format(len(removed)))
+            else:
+                self.send_toast(_("Library is up to date"))
+
+            from cartridges import steamgriddb
+            if added and steamgriddb.is_enabled():
+                new_games = [g for g in all_games if g.game_id in added and not g.cover]
+                if new_games:
+                    steamgriddb.fetch_all_covers_async(
+                        new_games,
+                        force=SETTINGS.get_boolean("sgdb-prefer"),
+                    )
+
+        sources.reload_async(on_done)
+
