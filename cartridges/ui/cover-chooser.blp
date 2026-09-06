@@ -1,0 +1,108 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $CoverChooserDialog: Adw.Dialog {
+  title: _("Choose Cover");
+  content-width: 760;
+  content-height: 680;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      [end]
+      Button file_button {
+        icon-name: "document-open-symbolic";
+        tooltip-text: _("Choose Local File");
+        clicked => $_choose_file();
+      }
+
+      [end]
+      Button reset_button {
+        icon-name: "edit-clear-symbolic";
+        tooltip-text: _("Reset to Default");
+        clicked => $_reset_cover();
+      }
+    }
+
+    [top]
+    Box {
+      orientation: vertical;
+      spacing: 8;
+      margin-start: 16;
+      margin-end: 16;
+      margin-bottom: 8;
+
+      SearchEntry search_entry {
+        placeholder-text: _("Search SteamGridDB...");
+        search-changed => $_on_search_changed();
+      }
+
+      Box {
+        halign: center;
+        spacing: 0;
+
+        styles [
+          "linked",
+        ]
+
+        ToggleButton all_filter_btn {
+          label: _("All");
+          active: true;
+          toggled => $_on_filter_changed();
+        }
+
+        ToggleButton anim_filter_btn {
+          label: _("Animated");
+          group: all_filter_btn;
+          toggled => $_on_filter_changed();
+        }
+
+        ToggleButton static_filter_btn {
+          label: _("Static");
+          group: all_filter_btn;
+          toggled => $_on_filter_changed();
+        }
+      }
+    }
+
+    content: Adw.ToastOverlay toast_overlay {
+      child: Adw.ViewStack stack {
+        Adw.ViewStackPage {
+          name: "loading";
+          child: Adw.Spinner spinner {};
+        }
+
+        Adw.ViewStackPage {
+          name: "empty";
+          child: Adw.StatusPage {
+            icon-name: "image-missing-symbolic";
+            title: _("No Covers Found");
+            description: _("Try searching with a different game name");
+          };
+        }
+
+        Adw.ViewStackPage {
+          name: "grid";
+          child: ScrolledWindow {
+            hscrollbar-policy: never;
+
+            child: FlowBox flow_box {
+              selection-mode: none;
+              max-children-per-line: 3;
+              min-children-per-line: 1;
+              halign: center;
+              valign: start;
+              margin-top: 16;
+              margin-bottom: 24;
+              margin-start: 16;
+              margin-end: 16;
+              row-spacing: 18;
+              column-spacing: 18;
+              child-activated => $_on_card_activated();
+            };
+          };
+        }
+      };
+    };
+  };
+}

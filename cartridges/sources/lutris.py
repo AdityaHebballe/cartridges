@@ -43,13 +43,14 @@ def get_games() -> Generator[Game]:
     coverart = _data_dir() / "coverart"
     with sqlite3.connect(_data_dir() / "pga.db") as conn:
         for row in conn.execute(_QUERY):
+            game_id = f"{ID}_{row[3]}_{row[0]}"
             yield Game(
                 executable=f"{OPEN} lutris:rungameid/{row[0]}",
-                game_id=f"{ID}_{row[3]}_{row[0]}",
+                game_id=game_id,
                 source=f"{ID}_{row[3]}",
                 hidden=row[4],
                 name=row[1],
-                cover=cover.at_path(coverart / f"{row[2]}.jpg"),
+                cover=cover.for_game(game_id) or cover.at_path(coverart / f"{row[2]}.jpg"),
             )
 
 

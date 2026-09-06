@@ -40,6 +40,7 @@ class GameActions(Gio.SimpleActionGroup):
         self.add_action_entries((
             ("add", lambda *_: add()),
             ("edit", lambda *_: edit(self.game)),
+            ("change-cover", lambda *_: change_cover(self.game)),
             ("play", lambda *_: self.game.play()),
             ("hide", lambda *_: hide(self.game)),
             ("unhide", lambda *_: unhide(self.game)),
@@ -55,12 +56,14 @@ class GameActions(Gio.SimpleActionGroup):
         false = Gtk.ConstantExpression.new_for_value(False)
 
         edit_action = cast(Gio.SimpleAction, self.lookup_action("edit"))
+        change_cover_action = cast(Gio.SimpleAction, self.lookup_action("change-cover"))
         play_action = cast(Gio.SimpleAction, self.lookup_action("play"))
         hide_action = cast(Gio.SimpleAction, self.lookup_action("hide"))
         unhide_action = cast(Gio.SimpleAction, self.lookup_action("unhide"))
         remove_action = cast(Gio.SimpleAction, self.lookup_action("remove"))
 
         has_game.bind(edit_action, "enabled", self)
+        has_game.bind(change_cover_action, "enabled", self)
         has_game.bind(play_action, "enabled", self)
         Gtk.TryExpression.new((hidden, false)).bind(unhide_action, "enabled", self)
         Gtk.TryExpression.new((not_hidden, false)).bind(hide_action, "enabled", self)
@@ -120,6 +123,13 @@ def edit(game: Game):
     window.details.edit()
 
 
+def change_cover(game: Game):
+    """Open cover chooser dialog for `game`."""
+    from .cover_chooser import CoverChooserDialog
+
+    CoverChooserDialog(game=game).present(_window())
+
+
 def hide(game: Game):
     """Hide `game` and notify the user with a toast."""
     game.hidden = True
@@ -152,8 +162,11 @@ def _window() -> "Window":
     return cast("Window", app.props.active_window)
 
 
+_current_sort_mode = STATE_SETTINGS.get_string("sort-mode")
+
+
 def _sort(game1: Game, game2: Game) -> int:
-    prop, invert = _SORT_MODES[STATE_SETTINGS.get_string("sort-mode")]
+    prop, invert = _SORT_MODES.get(_current_sort_mode, ("last-played", True))
     a = (game2 if invert else game1).get_property(prop)
     b = (game1 if invert else game2).get_property(prop)
 
@@ -167,6 +180,12 @@ def _sort(game1: Game, game2: Game) -> int:
 def _name_cmp(a: str, b: str) -> int:
     a, b = (name.lower().removeprefix("the ") for name in (a, b))
     return locale.strcoll(a, b)
+
+
+def _on_sort_mode_changed(*_args):
+    global _current_sort_mode
+    _current_sort_mode = STATE_SETTINGS.get_string("sort-mode")
+    sorter.changed(Gtk.SorterChange.DIFFERENT)
 
 
 filter_ = Gtk.EveryFilter()
@@ -184,9 +203,7 @@ filter_.append(
 )
 
 sorter = Gtk.CustomSorter.new(lambda game1, game2, _: _sort(game1, game2))
-STATE_SETTINGS.connect(
-    "changed::sort-mode", lambda *_: sorter.changed(Gtk.SorterChange.DIFFERENT)
-)
+STATE_SETTINGS.connect("changed::sort-mode", _on_sort_mode_changed)
 
 model = Gtk.SortListModel(
     model=Gtk.FilterListModel(

@@ -142,7 +142,8 @@ def get_games() -> Generator[Game]:
             last_played=int(lastplayed) if lastplayed and lastplayed.isdigit() else 0,
             name=name,
             developer=developer,
-            cover=_find_cover(librarycache / appid, capsule),
+            cover=cover.for_game(f"{ID}_{appid}")
+            or _find_cover(librarycache / appid, capsule),
         )
 
 

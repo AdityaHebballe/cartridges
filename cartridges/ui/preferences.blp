@@ -1,0 +1,81 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $Preferences: Adw.PreferencesDialog {
+  title: _("Preferences");
+  search-enabled: true;
+
+  Adw.PreferencesPage {
+    title: _("SteamGridDB");
+    icon-name: "image-x-generic-symbolic";
+
+    Adw.PreferencesGroup {
+      title: _("Authentication");
+      description: _("An API key is required to download covers from SteamGridDB.");
+
+      Adw.PasswordEntryRow key_entry {
+        title: _("API Key");
+        show-apply-button: true;
+        apply => $_key_applied();
+        notify::text => $_key_applied();
+      }
+
+      Adw.ActionRow {
+        title: _("Get API Key");
+        subtitle: "steamgriddb.com/profile/preferences/api";
+        activatable: true;
+        activated => $_open_api_key_page();
+
+        [suffix]
+        Image {
+          icon-name: "external-link-symbolic";
+        }
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Behavior");
+
+      Adw.SwitchRow sgdb_switch {
+        title: _("Use SteamGridDB");
+        subtitle: _("Download covers from SteamGridDB");
+      }
+
+      Adw.SwitchRow sgdb_prefer_switch {
+        title: _("Prefer Over Official Images");
+        subtitle: _("Use SteamGridDB even when the game provides its own cover");
+        sensitive: bind sgdb_switch.active;
+      }
+
+      Adw.SwitchRow sgdb_animated_switch {
+        title: _("Prefer Animated Covers");
+        subtitle: _("Download animated covers when available");
+        sensitive: bind sgdb_switch.active;
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Library Covers");
+
+      Adw.ActionRow update_row {
+        title: _("Download All Covers");
+        subtitle: _("Fetch artwork from SteamGridDB for all games");
+        sensitive: bind sgdb_switch.active;
+
+        [suffix]
+        Button update_button {
+          label: _("Download");
+          valign: center;
+          clicked => $_update_covers();
+        }
+
+        [suffix]
+        Spinner spinner {
+          visible: false;
+          spinning: bind spinner.visible;
+          valign: center;
+        }
+      }
+    }
+  }
+}

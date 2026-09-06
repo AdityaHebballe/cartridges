@@ -30,8 +30,7 @@ def get_games() -> Generator[Game]:
         except TypeError:
             continue
 
-        base = COVERS_DIR / game.game_id
-        game.cover = cover.at_path(f"{base}.gif") or cover.at_path(f"{base}.tiff")
+        game.cover = cover.for_game(game.game_id)
         yield game
 
 

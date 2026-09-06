@@ -161,12 +161,13 @@ def _games_from(source: type[_Source]) -> Generator[Game]:
             cover_uri = f"{entry.get('art_square', '')}{source.COVER_URI_PARAMS}"
             cover_path = images_cache / sha256(cover_uri.encode()).hexdigest()
 
+            game_id = f"{source_id}_{app_name}"
             yield Game(
                 executable=f"{OPEN} heroic://launch/{entry['runner']}/{app_name}",
-                game_id=f"{source_id}_{app_name}",
+                game_id=game_id,
                 source=source_id,
                 hidden=app_name in hidden,
                 name=entry["title"],
                 developer=entry.get("developer"),
-                cover=cover.at_path(cover_path),
+                cover=cover.for_game(game_id) or cover.at_path(cover_path),
             )

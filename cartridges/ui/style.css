@@ -95,3 +95,43 @@
     }
   }
 }
+
+.cover-button {
+  padding: 0;
+  border-radius: 12px;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.cover-button:hover {
+  background: none;
+}
+
+.cover-card {
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.cover-button:hover .cover-card {
+  transform: scale(1.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.cover-button:focus-visible .cover-card {
+  outline: 4px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.badge-animated {
+  background: rgba(138, 43, 226, 0.9);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 6px;
+  padding: 3px 7px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}

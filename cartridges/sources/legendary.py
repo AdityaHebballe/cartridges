@@ -52,18 +52,22 @@ def get_games() -> Generator[Game]:
         except (KeyError, OSError, JSONDecodeError):
             metadata = {}
 
+        game_id = f"{ID}_{app_name}"
+        c = cover.for_game(game_id)
         game = Game(
             executable=f"legendary launch {app_name}",
-            game_id=f"{ID}_{app_name}",
+            game_id=game_id,
             source=ID,
             name=title,
             developer=metadata.get("developer"),
+            cover=c,
         )
 
-        for image in metadata.get("keyImages", ()):
-            if image.get("type") == "DieselGameBoxTall" and (url := image.get("url")):
-                app.create_asyncio_task(_update_cover(game, url))
-                break
+        if not c:
+            for image in metadata.get("keyImages", ()):
+                if image.get("type") == "DieselGameBoxTall" and (url := image.get("url")):
+                    app.create_asyncio_task(_update_cover(game, url))
+                    break
 
         yield game
 
@@ -76,4 +80,4 @@ def _config_dir() -> Path:
 
 
 async def _update_cover(game: Game, url: str):
-    game.cover = await asyncio.to_thread(cover.at_url, url)
+    game.cover = await asyncio.to_thread(cover.download_and_save, game.game_id, url)

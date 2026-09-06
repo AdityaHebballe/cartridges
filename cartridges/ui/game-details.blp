@@ -92,8 +92,26 @@ template $GameDetails: Adw.NavigationPage {
             margin-end: 24;
             spacing: 36;
 
-            $Cover {
-              paintable: bind try { template.game as <$Game>.cover, null } as <Gdk.Paintable>;
+            Overlay {
+              $Cover {
+                paintable: bind try { template.game as <$Game>.cover, null } as <Gdk.Paintable>;
+              }
+
+              [overlay]
+              Button {
+                action-name: "details.change-cover";
+                icon-name: "image-x-generic-symbolic";
+                tooltip-text: _("Change Cover");
+                halign: end;
+                valign: end;
+                margin-end: 8;
+                margin-bottom: 8;
+
+                styles [
+                  "circular",
+                  "osd",
+                ]
+              }
             }
 
             Adw.ViewStack stack {
@@ -270,6 +288,17 @@ template $GameDetails: Adw.NavigationPage {
                         ]
                       }
 
+                      Button fetch_cover_button {
+                        action-name: "details.change-cover";
+                        icon-name: "image-x-generic-symbolic";
+                        tooltip-text: _("Choose Cover (SteamGridDB / File)");
+                        valign: center;
+
+                        styles [
+                          "circular",
+                        ]
+                      }
+
                       MenuButton {
                         icon-name: "edit-find-symbolic";
                         tooltip-text: _("Search On");
@@ -392,6 +421,16 @@ template $GameDetails: Adw.NavigationPage {
                     justify-last-line: true;
                     child-spacing: 12;
                     line-spacing: 12;
+
+                    Button {
+                      action-name: "details.change-cover";
+                      label: _("Change Cover");
+                      icon-name: "image-x-generic-symbolic";
+
+                      styles [
+                        "pill",
+                      ]
+                    }
 
                     Button cancel_button {
                       action-name: "details.cancel";

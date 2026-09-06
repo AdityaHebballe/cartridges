@@ -42,13 +42,17 @@ def get_games() -> Generator[Game]:
     app = cast(Gio.Application, Gio.Application.get_default())
     with sqlite3.connect(_config_dir() / "db" / "butler.db") as conn:
         for row in conn.execute(_QUERY):
+            game_id = f"{ID}_{row[0]}"
+            c = cover.for_game(game_id)
             game = Game(
                 executable=f"{OPEN} itch://caves/{row[4]}/launch",
-                game_id=f"{ID}_{row[0]}",
+                game_id=game_id,
                 source=ID,
                 name=row[1],
+                cover=c,
             )
-            app.create_asyncio_task(_update_cover(game, row[3] or row[2]))
+            if not c and (url := (row[3] or row[2])):
+                app.create_asyncio_task(_update_cover(game, url))
             yield game
 
 
@@ -61,4 +65,4 @@ def _config_dir() -> Path:
 
 
 async def _update_cover(game: Game, url: str):
-    game.cover = await asyncio.to_thread(cover.at_url, url)
+    game.cover = await asyncio.to_thread(cover.download_and_save, game.game_id, url)

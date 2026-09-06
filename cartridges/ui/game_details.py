@@ -46,6 +46,8 @@ class GameDetails(Adw.NavigationPage):
             ("edit", lambda *_: self.edit()),
             ("cancel", lambda *_: self._cancel()),
             ("apply", lambda *_: self._apply()),
+            ("fetch-cover", lambda *_: self._choose_cover()),
+            ("change-cover", lambda *_: self._choose_cover()),
             (
                 "search-on",
                 lambda _action, param, *_: Gio.AppInfo.launch_default_for_uri(
@@ -84,9 +86,38 @@ class GameDetails(Adw.NavigationPage):
         self.name_entry.grab_focus()
 
     def _apply(self):
+        is_new = not self.game
         self.game_editable.apply()
         self.game = self.game_editable.game
         self.editing = False
+
+        if is_new and self.game:
+            from cartridges import steamgriddb
+            if steamgriddb.is_enabled():
+                import threading
+                threading.Thread(
+                    target=steamgriddb.fetch_cover_for_game,
+                    args=(self.game,),
+                    daemon=True,
+                ).start()
+
+    def _choose_cover(self):
+        if not self.game:
+            return
+
+        from cartridges import steamgriddb
+        from cartridges.ui.games import _window
+        from .cover_chooser import CoverChooserDialog
+
+        if not steamgriddb.is_enabled():
+            _window().send_toast(_("Configure SteamGridDB API key in Preferences"))
+            from .preferences import Preferences
+
+            Preferences().present(self.get_root())
+            return
+
+        dialog = CoverChooserDialog(game=cast(Game, self.game))
+        dialog.present(self.get_root())
 
     @Gtk.Template.Callback()
     def _activate_apply(self, _entry):

@@ -43,7 +43,7 @@
   </branding>
 
   <releases>
-    <release version="49.0"/>
+    <release version="49.0" date="2026-09-06" />
   </releases>
 
 </component>

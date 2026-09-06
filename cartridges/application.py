@@ -25,12 +25,15 @@ class Application(Adw.Application):
 
         self.add_action_entries((
             ("about", lambda *_: self._present_about_dialog()),
+            ("preferences", lambda *_: self._present_preferences_dialog()),
             ("quit", lambda *_: self.quit()),
         ))
         self.set_accels_for_action("app.quit", (f"{PRIMARY_KEY}q",))
+        self.set_accels_for_action("app.preferences", (f"{PRIMARY_KEY}comma",))
 
         sources.load()
         collections.load()
+        self._auto_fetch_covers()
 
     @override
     def do_activate(self):
@@ -43,3 +46,27 @@ class Application(Adw.Application):
         # and optionally a URL or an email in <user@example.org> format.
         about.props.translator_credits = _("translator-credits")
         about.present(self.props.active_window)
+
+    def _present_preferences_dialog(self):
+        from .ui.preferences import Preferences
+
+        dialog = Preferences()
+        dialog.present(self.props.active_window)
+
+    def _auto_fetch_covers(self):
+        from . import SETTINGS, steamgriddb
+        from .cover import for_game
+
+        if not steamgriddb.is_enabled():
+            return
+
+        prefer_sgdb = SETTINGS.get_boolean("sgdb-prefer")
+        missing = []
+        for src in sources.model:
+            for i in range(src.get_n_items()):
+                if g := src.get_item(i):
+                    if not for_game(g.game_id) and (prefer_sgdb or not g.cover):
+                        missing.append(g)
+
+        if missing:
+            steamgriddb.fetch_all_covers_async(missing)

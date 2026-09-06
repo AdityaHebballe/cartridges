@@ -31,10 +31,24 @@ _DESKTOP_PATHS = (
 _FILE_BLACKLIST = (
     "page.kramo.Cartridges.*",
     "net.lutris.*",
+    "lutris.desktop",
+    "steam.desktop",
+    "com.valvesoftware.Steam.desktop",
+    "com.heroicgameslauncher.hgl.desktop",
+    "heroic.desktop",
+    "io.itch.itch.desktop",
+    "*faugus-launcher*",
+    "*steamtinkerlaunch*",
+    "*goverlay*",
+    "*ProtonPlus*",
+    "*com.usebottles.bottles*",
 )
 _EXECUTABLE_BLACKLIST = (
     "steam://rungameid/",
     "heroic://launch/",
+    "lutris:rungameid/",
+    "lutris:rungame/",
+    "itch://caves/",
     "bottles-cli ",
 )
 _FLATPAK_ID_BLACKLIST = frozenset((
@@ -85,7 +99,7 @@ def _game_from(path: Path) -> Game:
                 raise ValueError
 
     exe = file.get_string("Desktop Entry", "Exec")
-    if any(exe.startswith(cmd) for cmd in _EXECUTABLE_BLACKLIST):
+    if any(cmd in exe for cmd in _EXECUTABLE_BLACKLIST):
         raise ValueError
 
     with suppress(GLib.Error):
@@ -121,11 +135,16 @@ def _game_from(path: Path) -> Game:
         game_id=f"{ID}_{path.stem}",
         source=ID,
         name=file.get_string("Desktop Entry", "Name"),
-        cover=cover.from_icon(icon),
+        cover=cover.for_game(f"{ID}_{path.stem}") or cover.from_icon(icon),
     )
 
 
 def _try_exec(executable: str) -> bool:
+    if not Path("/.flatpak-info").exists():
+        import shutil
+
+        return shutil.which(executable) is not None
+
     try:
         subprocess.run(  # noqa: S603
             shlex.split(games.format_executable(f"which {executable}")),

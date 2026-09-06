@@ -4,6 +4,18 @@
     <key name="collections" type="aa{sv}">
       <default>[]</default>
     </key>
+    <key name="sgdb-key" type="s">
+      <default>"6d5415b3acf7281937d86cb9ea17a7fa"</default>
+    </key>
+    <key name="sgdb" type="b">
+      <default>true</default>
+    </key>
+    <key name="sgdb-prefer" type="b">
+      <default>false</default>
+    </key>
+    <key name="sgdb-animated" type="b">
+      <default>true</default>
+    </key>
   </schema>
   <schema id="@APP_ID@.State" path="@PREFIX@/State/">
     <key name="width" type="i">
