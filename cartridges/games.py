@@ -97,6 +97,14 @@ class Game(Gio.SimpleActionGroup):
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
 
+        from cartridges import SETTINGS
+
+        if SETTINGS.get_boolean("exit-after-launch"):
+            from gi.repository import GLib
+
+            if app := Gio.Application.get_default():
+                GLib.idle_add(app.quit)
+
     def save(self):
         """Save the game's properties to disk."""
         properties = {prop.name: getattr(self, prop.name) for prop in PROPERTIES}

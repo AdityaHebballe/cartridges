@@ -6,6 +6,20 @@ template $Preferences: Adw.PreferencesDialog {
   search-enabled: true;
 
   Adw.PreferencesPage {
+    title: _("General");
+    icon-name: "preferences-system-symbolic";
+
+    Adw.PreferencesGroup {
+      title: _("Behavior");
+
+      Adw.SwitchRow exit_after_launch_switch {
+        title: _("Close on Launch");
+        subtitle: _("Close Cartridges after opening a game");
+      }
+    }
+  }
+
+  Adw.PreferencesPage {
     title: _("Sources");
     icon-name: "system-run-symbolic";
 

@@ -16,6 +16,8 @@ class Preferences(Adw.PreferencesDialog):
 
     __gtype_name__ = __qualname__
 
+    exit_after_launch_switch: Adw.SwitchRow = Gtk.Template.Child()
+
     steam_switch: Adw.SwitchRow = Gtk.Template.Child()
     faugus_switch: Adw.SwitchRow = Gtk.Template.Child()
     lutris_switch: Adw.SwitchRow = Gtk.Template.Child()
@@ -50,6 +52,7 @@ class Preferences(Adw.PreferencesDialog):
             switch.connect("notify::active", self._on_source_switch_toggled, source_id)
 
         flags = Gio.SettingsBindFlags.DEFAULT
+        SETTINGS.bind("exit-after-launch", self.exit_after_launch_switch, "active", flags)
         SETTINGS.bind("sgdb", self.sgdb_switch, "active", flags)
         SETTINGS.bind("sgdb-prefer", self.sgdb_prefer_switch, "active", flags)
         SETTINGS.bind("sgdb-animated", self.sgdb_animated_switch, "active", flags)
