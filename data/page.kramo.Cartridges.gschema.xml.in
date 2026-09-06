@@ -16,6 +16,15 @@
     <key name="sgdb-animated" type="b">
       <default>true</default>
     </key>
+    <key name="disabled-sources" type="as">
+      <default>[]</default>
+    </key>
+    <key name="hidden-games" type="as">
+      <default>[]</default>
+    </key>
+    <key name="unhidden-games" type="as">
+      <default>[]</default>
+    </key>
   </schema>
   <schema id="@APP_ID@.State" path="@PREFIX@/State/">
     <key name="width" type="i">

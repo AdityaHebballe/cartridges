@@ -50,6 +50,7 @@ _EXECUTABLE_BLACKLIST = (
     "lutris:rungame/",
     "itch://caves/",
     "bottles-cli ",
+    "faugus-launcher ",
 )
 _FLATPAK_ID_BLACKLIST = frozenset((
     "hu.kramo.Cartridges",

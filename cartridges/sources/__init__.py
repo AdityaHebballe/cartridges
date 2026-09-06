@@ -112,27 +112,72 @@ class Source(GObject.Object, Gio.ListModel[Game]):
         self.items_changed(pos, 0, 1)
 
     def _get_games(self, added: int) -> Generator[Game]:
+        from cartridges import SETTINGS
+
+        hidden_games = set(SETTINGS.get_strv("hidden-games"))
+        unhidden_games = set(SETTINGS.get_strv("unhidden-games"))
+
         for game in self._module.get_games():
             game.added = game.added or added
+            if game.game_id in hidden_games:
+                game.hidden = True
+            elif game.game_id in unhidden_games:
+                game.hidden = False
             yield game
 
 
+_SOURCE_ORDER = (
+    "steam",
+    "faugus",
+    "lutris",
+    "heroic",
+    "desktop",
+    "itch",
+    "legendary",
+    "imported",
+)
+
+all_sources: dict[str, Source] = {}
+model = Gio.ListStore(item_type=Source)
+
+
 def load():
-    """Populate `sources.model`."""
-    model.splice(0, 0, tuple(_get_sources()))
+    """Populate `all_sources` and initialize `sources.model`."""
+    from cartridges import SETTINGS
 
-
-@cache
-def get(ident: str) -> Source:
-    """Get the source with `ident`."""
-    return next(source for source in model if source.id == ident)
-
-
-def _get_sources() -> Generator[Source]:
+    global all_sources
     added = int(time.time())
+    all_sources.clear()
     for info in pkgutil.iter_modules(__path__, prefix="."):
         module = cast(_SourceModule, importlib.import_module(info.name, __package__))
-        yield Source(module, added)
+        all_sources[module.ID] = Source(module, added)
+
+    SETTINGS.connect("changed::disabled-sources", lambda *_: update_model())
+    update_model()
 
 
-model = Gio.ListStore(item_type=Source)
+def update_model():
+    """Sync sources.model with current disabled-sources settings."""
+    from cartridges import SETTINGS
+
+    disabled = set(SETTINGS.get_strv("disabled-sources"))
+
+    def sort_key(s: Source) -> int:
+        try:
+            return _SOURCE_ORDER.index(s.id)
+        except ValueError:
+            return len(_SOURCE_ORDER)
+
+    enabled = [
+        source
+        for ident, source in all_sources.items()
+        if ident not in disabled
+    ]
+    enabled.sort(key=sort_key)
+    model.splice(0, model.get_n_items(), enabled)
+
+
+def get(ident: str) -> Source:
+    """Get the source with `ident`."""
+    return all_sources[ident]
+

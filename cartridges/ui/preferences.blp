@@ -6,6 +6,86 @@ template $Preferences: Adw.PreferencesDialog {
   search-enabled: true;
 
   Adw.PreferencesPage {
+    title: _("Sources");
+    icon-name: "system-run-symbolic";
+
+    Adw.PreferencesGroup {
+      title: _("Enabled Sources");
+      description: _("Choose which sources to import games from.");
+
+      Adw.SwitchRow steam_switch {
+        title: _("Steam");
+        subtitle: _("Import games from Steam");
+
+        [prefix]
+        Image {
+          icon-name: "steam-symbolic";
+        }
+      }
+
+      Adw.SwitchRow faugus_switch {
+        title: _("Faugus");
+        subtitle: _("Import games from Faugus Launcher");
+
+        [prefix]
+        Image {
+          icon-name: "faugus-symbolic";
+        }
+      }
+
+      Adw.SwitchRow lutris_switch {
+        title: _("Lutris");
+        subtitle: _("Import games from Lutris");
+
+        [prefix]
+        Image {
+          icon-name: "lutris-symbolic";
+        }
+      }
+
+      Adw.SwitchRow heroic_switch {
+        title: _("Heroic");
+        subtitle: _("Import games from Heroic Games Launcher");
+
+        [prefix]
+        Image {
+          icon-name: "heroic-symbolic";
+        }
+      }
+
+      Adw.SwitchRow desktop_switch {
+        title: _("Desktop");
+        subtitle: _("Import games from desktop applications");
+
+        [prefix]
+        Image {
+          icon-name: "desktop-symbolic";
+        }
+      }
+
+      Adw.SwitchRow itch_switch {
+        title: _("Itch");
+        subtitle: _("Import games from itch.io");
+
+        [prefix]
+        Image {
+          icon-name: "itch-symbolic";
+        }
+      }
+
+      Adw.SwitchRow legendary_switch {
+        title: _("Legendary");
+        subtitle: _("Import games from Legendary CLI");
+
+        [prefix]
+        Image {
+          icon-name: "legendary-symbolic";
+        }
+      }
+    }
+  }
+
+  Adw.PreferencesPage {
     title: _("SteamGridDB");
     icon-name: "image-x-generic-symbolic";
 

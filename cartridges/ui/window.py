@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
-from cartridges import STATE_SETTINGS
+from cartridges import SETTINGS, STATE_SETTINGS
 from cartridges.collections import Collection
 from cartridges.config import PREFIX, PROFILE
 from cartridges.games import Game
@@ -115,6 +115,8 @@ class Window(Adw.ApplicationWindow):
         )
         self.model = games.model
 
+        SETTINGS.connect("changed::disabled-sources", self._on_disabled_sources_changed)
+
         self._history: dict[Adw.Toast, _UndoFunc] = {}
 
     def send_toast(self, title: str, *, undo: _UndoFunc | None = None):
@@ -138,6 +140,15 @@ class Window(Adw.ApplicationWindow):
     def _model_emptied(self):
         self.model = games.model
         self.sidebar.props.selected = 0
+
+    def _on_disabled_sources_changed(self, *_args):
+        if self.model != games.model and self.collection is None:
+            for idx in range(self.sidebar.get_n_items()):
+                item = self.sidebar.get_item(idx)
+                if isinstance(item, SourceSidebarItem) and item.model == self.model:
+                    return
+            self.model = games.model
+            self.sidebar.props.selected = 0
 
     @Gtk.Template.Callback()
     @staticmethod

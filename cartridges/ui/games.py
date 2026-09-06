@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gi.repository import Gio, GObject, Gtk
 
-from cartridges import STATE_SETTINGS, sources
+from cartridges import SETTINGS, STATE_SETTINGS, sources
 from cartridges.games import Game
 from cartridges.sources import imported
 
@@ -133,18 +133,30 @@ def change_cover(game: Game):
 def hide(game: Game):
     """Hide `game` and notify the user with a toast."""
     game.hidden = True
+    hidden = set(SETTINGS.get_strv("hidden-games"))
+    unhidden = set(SETTINGS.get_strv("unhidden-games"))
+    hidden.add(game.game_id)
+    unhidden.discard(game.game_id)
+    SETTINGS.set_strv("hidden-games", sorted(hidden))
+    SETTINGS.set_strv("unhidden-games", sorted(unhidden))
     _window().send_toast(
         _("{} hidden").format(game.name),
-        undo=lambda: setattr(game, "hidden", False),
+        undo=lambda: unhide(game),
     )
 
 
 def unhide(game: Game):
     """Unhide `game` and notify the user with a toast."""
     game.hidden = False
+    hidden = set(SETTINGS.get_strv("hidden-games"))
+    unhidden = set(SETTINGS.get_strv("unhidden-games"))
+    hidden.discard(game.game_id)
+    unhidden.add(game.game_id)
+    SETTINGS.set_strv("hidden-games", sorted(hidden))
+    SETTINGS.set_strv("unhidden-games", sorted(unhidden))
     _window().send_toast(
         _("{} unhidden").format(game.name),
-        undo=lambda: setattr(game, "hidden", True),
+        undo=lambda: hide(game),
     )
 
 

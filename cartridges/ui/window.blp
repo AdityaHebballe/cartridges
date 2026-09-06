@@ -226,9 +226,15 @@ template $Window: Adw.ApplicationWindow {
                 primary: true;
 
                 menu-model: menu {
-                  item (_("Preferences"), "app.preferences")
-                  item (_("Keyboard Shortcuts"), "app.shortcuts")
-                  item (_("About Cartridges"), "app.about")
+                  section {
+                    item (_("Show Hidden Games"), "win.show-hidden")
+                  }
+
+                  section {
+                    item (_("Preferences"), "app.preferences")
+                    item (_("Keyboard Shortcuts"), "app.shortcuts")
+                    item (_("About Cartridges"), "app.about")
+                  }
                 };
               }
             }
