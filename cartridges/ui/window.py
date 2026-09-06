@@ -10,12 +10,12 @@ from typing import Any, cast
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
-from cartridges import SETTINGS, STATE_SETTINGS
+from cartridges import SETTINGS, STATE_SETTINGS, sources as core_sources
 from cartridges.collections import Collection
 from cartridges.config import PREFIX, PROFILE
 from cartridges.games import Game
 
-from . import closures, collections, games, sources
+from . import closures, collections, games, sources as ui_sources
 from .collections import CollectionActions, CollectionSidebarItem
 from .game_details import GameDetails
 from .game_item import GameItem  # noqa: F401
@@ -49,6 +49,7 @@ class Window(Adw.ApplicationWindow):
     search_entry: Gtk.SearchEntry = Gtk.Template.Child()
     sort_button: Gtk.MenuButton = Gtk.Template.Child()
     refresh_button: Gtk.Button = Gtk.Template.Child()
+    refresh_stack: Gtk.Stack = Gtk.Template.Child()
     main_menu_button: Gtk.MenuButton = Gtk.Template.Child()
     toast_overlay: Adw.ToastOverlay = Gtk.Template.Child()
     view_stack: Adw.ViewStack = Gtk.Template.Child()
@@ -85,7 +86,7 @@ class Window(Adw.ApplicationWindow):
         STATE_SETTINGS.bind("is-maximized", self, "maximized", flags)
         STATE_SETTINGS.bind("show-sidebar", self.split_view, "show-sidebar", flags)
 
-        self.sources.bind_model(sources.model, SourceSidebarItem)
+        self.sources.bind_model(ui_sources.model, SourceSidebarItem)
         self.collections.bind_model(collections.model, CollectionSidebarItem)
 
         self.add_action(STATE_SETTINGS.create_action("show-sidebar"))
@@ -238,29 +239,33 @@ class Window(Adw.ApplicationWindow):
 
     def _refresh(self, *_args):
         self.refresh_button.props.sensitive = False
+        self.refresh_stack.props.visible_child_name = "spinner"
 
         def on_done(all_games: list[Game], added: set[str], removed: set[str]):
-            self.refresh_button.props.sensitive = True
-
-            if added and removed:
-                self.send_toast(
-                    _("Added {} and removed {} games").format(len(added), len(removed))
-                )
-            elif added:
-                self.send_toast(_("Found {} new game(s)").format(len(added)))
-            elif removed:
-                self.send_toast(_("Removed {} game(s)").format(len(removed)))
-            else:
-                self.send_toast(_("Library is up to date"))
-
-            from cartridges import steamgriddb
-            if added and steamgriddb.is_enabled():
-                new_games = [g for g in all_games if g.game_id in added and not g.cover]
-                if new_games:
-                    steamgriddb.fetch_all_covers_async(
-                        new_games,
-                        force=SETTINGS.get_boolean("sgdb-prefer"),
+            try:
+                if added and removed:
+                    self.send_toast(
+                        _("Added {} and removed {} games").format(len(added), len(removed))
                     )
+                elif added:
+                    self.send_toast(_("Found {} new game(s)").format(len(added)))
+                elif removed:
+                    self.send_toast(_("Removed {} game(s)").format(len(removed)))
+                else:
+                    self.send_toast(_("Library is up to date"))
 
-        sources.reload_async(on_done)
+                from cartridges import steamgriddb
+                if added and steamgriddb.is_enabled():
+                    new_games = [g for g in all_games if g.game_id in added and not g.cover]
+                    if new_games:
+                        steamgriddb.fetch_all_covers_async(
+                            new_games,
+                            force=SETTINGS.get_boolean("sgdb-prefer"),
+                        )
+            finally:
+                self.refresh_button.props.sensitive = True
+                self.refresh_stack.props.visible_child_name = "icon"
+
+        core_sources.reload_async(on_done)
+
 

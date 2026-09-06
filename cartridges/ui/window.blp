@@ -231,9 +231,26 @@ template $Window: Adw.ApplicationWindow {
 
               [start]
               Button refresh_button {
-                icon-name: "view-refresh-symbolic";
                 tooltip-text: _("Refresh Library");
                 action-name: "win.refresh";
+
+                child: Stack refresh_stack {
+                  transition-type: crossfade;
+
+                  StackPage {
+                    name: "icon";
+                    child: Image {
+                      icon-name: "view-refresh-symbolic";
+                    };
+                  }
+
+                  StackPage {
+                    name: "spinner";
+                    child: Spinner {
+                      spinning: true;
+                    };
+                  }
+                };
               }
 
               [end]

@@ -187,38 +187,49 @@ def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | Non
     """Reload all sources asynchronously in a worker thread."""
 
     def worker():
-        added_time = int(time.time())
-        scanned: dict[str, list[Game]] = {}
-        for ident, source in list(all_sources.items()):
-            try:
-                scanned[ident] = list(source._get_games(added_time))
-            except OSError:
-                scanned[ident] = []
+        try:
+            added = int(time.time())
+            new_sources: dict[str, Source] = {}
+            for info in pkgutil.iter_modules(__path__, prefix="."):
+                try:
+                    module = cast(_SourceModule, importlib.import_module(info.name, __package__))
+                    new_sources[module.ID] = Source(module, added)
+                except Exception:
+                    pass
 
-        def apply():
-            old_game_ids = set()
-            for s in all_sources.values():
-                for i in range(s.get_n_items()):
-                    if g := s.get_item(i):
-                        old_game_ids.add(g.game_id)
+            def apply():
+                try:
+                    old_game_ids = set()
+                    for s in all_sources.values():
+                        for i in range(s.get_n_items()):
+                            if g := s.get_item(i):
+                                old_game_ids.add(g.game_id)
 
-            all_games: list[Game] = []
-            for ident, new_games in scanned.items():
-                if source := all_sources.get(ident):
-                    old_len = len(source._games)
-                    source._games = new_games
-                    source.items_changed(0, old_len, len(new_games))
-                    all_games.extend(new_games)
+                    all_sources.clear()
+                    all_sources.update(new_sources)
+                    update_model()
 
-            new_game_ids = {g.game_id for g in all_games}
-            added = new_game_ids - old_game_ids
-            removed = old_game_ids - new_game_ids
+                    all_games: list[Game] = []
+                    for s in all_sources.values():
+                        for i in range(s.get_n_items()):
+                            if g := s.get_item(i):
+                                all_games.append(g)
 
+                    new_game_ids = {g.game_id for g in all_games}
+                    added_ids = new_game_ids - old_game_ids
+                    removed_ids = old_game_ids - new_game_ids
+
+                    if on_done:
+                        on_done(all_games, added_ids, removed_ids)
+                except Exception:
+                    if on_done:
+                        on_done([], set(), set())
+                return GLib.SOURCE_REMOVE
+
+            GLib.idle_add(apply)
+        except Exception:
             if on_done:
-                on_done(all_games, added, removed)
-            return GLib.SOURCE_REMOVE
-
-        GLib.idle_add(apply)
+                GLib.idle_add(on_done, [], set(), set())
 
     threading.Thread(target=worker, daemon=True).start()
 
