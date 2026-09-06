@@ -234,8 +234,14 @@ template $Window: Adw.ApplicationWindow {
                 tooltip-text: _("Refresh Library");
                 action-name: "win.refresh";
 
+                styles [
+                  "flat",
+                  "image-button",
+                ]
+
                 child: Stack refresh_stack {
                   transition-type: crossfade;
+                  visible-child-name: "icon";
 
                   StackPage {
                     name: "icon";
