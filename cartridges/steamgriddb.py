@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 from gi.repository import GLib
 
 from cartridges import SETTINGS
-from cartridges.cover import COVERS_DIR, SUPPORTED_EXTENSIONS, USER_AGENT, for_game, save_cover
+from cartridges.cover import COVERS_DIR, SUPPORTED_EXTENSIONS, USER_AGENT, for_game, has_cover, save_cover
 from cartridges.games import Game
 
 _logger = logging.getLogger(__name__)
@@ -121,8 +121,7 @@ def fetch_cover_for_game(game: Game, *, force: bool = False) -> bool:
     prefer_animated = SETTINGS.get_boolean("sgdb-animated")
 
     # If we already have a saved cover and neither force nor prefer is set, skip
-    existing_cover = for_game(game.game_id)
-    if existing_cover and not (force or prefer_sgdb):
+    if has_cover(game.game_id) and not (force or prefer_sgdb):
         return False
 
     grid_url = None
@@ -153,12 +152,12 @@ def fetch_cover_for_game(game: Game, *, force: bool = False) -> bool:
     if not saved_path:
         return False
 
-    new_cover = for_game(game.game_id)
-    if new_cover:
-        GLib.idle_add(setattr, game, "cover", new_cover)
-        return True
+    def _apply():
+        if new_cover := for_game(game.game_id):
+            game.cover = new_cover
 
-    return False
+    GLib.idle_add(_apply)
+    return True
 
 
 def fetch_all_covers_async(

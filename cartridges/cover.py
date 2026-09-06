@@ -136,6 +136,14 @@ def download_and_save(game_id: str, url: str) -> Gdk.Paintable | None:
     return None
 
 
+def has_cover(game_id: str) -> bool:
+    """Check if a saved cover file for `game_id` exists on disk."""
+    for ext in SUPPORTED_EXTENSIONS:
+        if (COVERS_DIR / f"{game_id}.{ext}").is_file():
+            return True
+    return False
+
+
 def for_game(game_id: str) -> Gdk.Paintable | None:
     """Load a saved cover for `game_id` from COVERS_DIR."""
     for ext in SUPPORTED_EXTENSIONS:

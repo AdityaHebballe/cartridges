@@ -238,6 +238,12 @@ class Window(Adw.ApplicationWindow):
         undo()
 
     def _refresh(self, *_args):
+        action = cast(Gio.SimpleAction | None, self.lookup_action("refresh"))
+        if action and not action.props.enabled:
+            return
+        if action:
+            action.props.enabled = False
+
         self.refresh_button.props.sensitive = False
         self.refresh_stack.props.visible_child_name = "spinner"
 
@@ -262,9 +268,13 @@ class Window(Adw.ApplicationWindow):
                             new_games,
                             force=SETTINGS.get_boolean("sgdb-prefer"),
                         )
+            except Exception:
+                pass
             finally:
                 self.refresh_button.props.sensitive = True
                 self.refresh_stack.props.visible_child_name = "icon"
+                if action:
+                    action.props.enabled = True
 
         core_sources.reload_async(on_done)
 

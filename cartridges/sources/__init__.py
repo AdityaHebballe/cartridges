@@ -184,53 +184,74 @@ def get(ident: str) -> Source:
 
 
 def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | None = None):
-    """Reload all sources asynchronously in a worker thread."""
+    """Reload all sources cooperatively and asynchronously on the GLib main loop.
 
-    def worker():
-        try:
-            added = int(time.time())
-            new_sources: dict[str, Source] = {}
-            for info in pkgutil.iter_modules(__path__, prefix="."):
-                try:
-                    module = cast(_SourceModule, importlib.import_module(info.name, __package__))
-                    new_sources[module.ID] = Source(module, added)
-                except Exception:
-                    pass
+    Reconciles games in-place for each source so existing Game and Source
+    instances, sidebar widgets, and observers are preserved with zero threading issues.
+    """
+    all_added: set[str] = set()
+    all_removed: set[str] = set()
+    now = int(time.time())
+    source_items = list(all_sources.items())
 
-            def apply():
-                try:
-                    old_game_ids = set()
-                    for s in all_sources.values():
-                        for i in range(s.get_n_items()):
-                            if g := s.get_item(i):
-                                old_game_ids.add(g.game_id)
+    def step(idx: int) -> bool:
+        if idx >= len(source_items):
+            all_games: list[Game] = []
+            for s in all_sources.values():
+                for i in range(s.get_n_items()):
+                    if g := s.get_item(i):
+                        all_games.append(g)
 
-                    all_sources.clear()
-                    all_sources.update(new_sources)
-                    update_model()
-
-                    all_games: list[Game] = []
-                    for s in all_sources.values():
-                        for i in range(s.get_n_items()):
-                            if g := s.get_item(i):
-                                all_games.append(g)
-
-                    new_game_ids = {g.game_id for g in all_games}
-                    added_ids = new_game_ids - old_game_ids
-                    removed_ids = old_game_ids - new_game_ids
-
-                    if on_done:
-                        on_done(all_games, added_ids, removed_ids)
-                except Exception:
-                    if on_done:
-                        on_done([], set(), set())
-                return GLib.SOURCE_REMOVE
-
-            GLib.idle_add(apply)
-        except Exception:
             if on_done:
-                GLib.idle_add(on_done, [], set(), set())
+                on_done(all_games, all_added, all_removed)
+            return GLib.SOURCE_REMOVE
 
-    threading.Thread(target=worker, daemon=True).start()
+        ident, src = source_items[idx]
+        try:
+            existing_by_id = {g.game_id: g for g in src._games}
+            try:
+                scanned_games = list(src._get_games(now))
+            except Exception:
+                scanned_games = []
+
+            scanned_by_id = {g.game_id: g for g in scanned_games}
+
+            # 1. Remove games no longer present
+            removed_ids = set(existing_by_id) - set(scanned_by_id)
+            if removed_ids:
+                all_removed.update(removed_ids)
+                for i in reversed(range(len(src._games))):
+                    if src._games[i].game_id in removed_ids:
+                        src._games.pop(i)
+                        src.items_changed(i, 1, 0)
+
+            # 2. Update existing games
+            for gid in set(existing_by_id) & set(scanned_by_id):
+                old_g = existing_by_id[gid]
+                new_g = scanned_by_id[gid]
+                if old_g.last_played != new_g.last_played:
+                    old_g.last_played = new_g.last_played
+                if not old_g.cover and new_g.cover:
+                    old_g.cover = new_g.cover
+
+            # 3. Add new games
+            added_ids = set(scanned_by_id) - set(existing_by_id)
+            if added_ids:
+                all_added.update(added_ids)
+                for gid in added_ids:
+                    new_g = scanned_by_id[gid]
+                    pos = len(src._games)
+                    src._games.append(new_g)
+                    src.items_changed(pos, 0, 1)
+
+        except Exception:
+            pass
+
+        GLib.idle_add(step, idx + 1)
+        return GLib.SOURCE_REMOVE
+
+    # 30ms timeout allows GTK main loop to render the spinner transition
+    # before the first source is scanned.
+    GLib.timeout_add(30, step, 0)
 
 
