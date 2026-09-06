@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: Copyright 2025 kramo
 # SPDX-FileCopyrightText: Copyright 2025 Jamie Gravendeel
 
+import functools
 import locale
 from gettext import gettext as _
 from typing import TYPE_CHECKING, Any, cast
@@ -189,9 +190,14 @@ def _sort(game1: Game, game2: Game) -> int:
     )
 
 
+@functools.cache
+def _normalize_name(name: str) -> str:
+    s = name.lower()
+    return s[4:] if s.startswith("the ") else s
+
+
 def _name_cmp(a: str, b: str) -> int:
-    a, b = (name.lower().removeprefix("the ") for name in (a, b))
-    return locale.strcoll(a, b)
+    return locale.strcoll(_normalize_name(a), _normalize_name(b))
 
 
 def _on_sort_mode_changed(*_args):

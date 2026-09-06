@@ -39,6 +39,7 @@ class CoverChooserDialog(Adw.Dialog):
 
         self.game = game
         self._all_covers: list[dict] = []
+        self._thumb_cache: dict[str, Gdk.Paintable] = {}
         self._search_timeout_id: int | None = None
         self._thumb_executor = ThreadPoolExecutor(max_workers=4)
         self._media_files: list[Gtk.MediaFile] = []
@@ -59,6 +60,7 @@ class CoverChooserDialog(Adw.Dialog):
             except Exception:
                 pass
         self._media_files.clear()
+        self._thumb_cache.clear()
         self._thumb_executor.shutdown(wait=False, cancel_futures=True)
 
     def _start_search(self, query: str | None):
@@ -149,9 +151,13 @@ class CoverChooserDialog(Adw.Dialog):
         # Submit thumbnail task
         thumb_url = cover_item.get("thumb") or cover_item.get("url")
         if thumb_url:
-            self._thumb_executor.submit(
-                self._load_thumbnail, thumb_url, cover_widget, spin, cover_item.get("is_animated")
-            )
+            if cached := self._thumb_cache.get(thumb_url):
+                spin.props.visible = False
+                cover_widget.props.paintable = cached
+            else:
+                self._thumb_executor.submit(
+                    self._load_thumbnail, thumb_url, cover_widget, spin, cover_item.get("is_animated")
+                )
 
         return btn
 
@@ -161,17 +167,21 @@ class CoverChooserDialog(Adw.Dialog):
 
         try:
             if is_animated and url.endswith(".webm"):
-                # Use native GStreamer media stream for webm
-                f = Gio.File.new_for_uri(url)
-                mf = Gtk.MediaFile.new_for_file(f)
-                mf.set_loop(True)
-                mf.play()
-                self._media_files.append(mf)
-
                 def update_anim():
-                    if self._is_active:
+                    if not self._is_active:
+                        return
+                    try:
+                        f = Gio.File.new_for_uri(url)
+                        mf = Gtk.MediaFile.new_for_file(f)
+                        mf.set_loop(True)
+                        mf.play()
+                        self._media_files.append(mf)
+                        self._thumb_cache[url] = mf
                         spin.props.visible = False
                         cover_widget.props.paintable = mf
+                    except Exception as e:
+                        _logger.debug("Failed to initialize MediaFile for %s: %s", url, e)
+                        spin.props.visible = False
 
                 GLib.idle_add(update_anim)
             else:
@@ -179,12 +189,19 @@ class CoverChooserDialog(Adw.Dialog):
                 with urlopen(req, timeout=10) as resp:
                     data = resp.read()
 
-                tex = Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
+                bytes_obj = GLib.Bytes.new(data)
 
                 def update_static():
-                    if self._is_active:
+                    if not self._is_active:
+                        return
+                    try:
+                        tex = Gdk.Texture.new_from_bytes(bytes_obj)
+                        self._thumb_cache[url] = tex
                         spin.props.visible = False
                         cover_widget.props.paintable = tex
+                    except Exception as e:
+                        _logger.debug("Failed to create Gdk.Texture for %s: %s", url, e)
+                        spin.props.visible = False
 
                 GLib.idle_add(update_static)
         except Exception as e:

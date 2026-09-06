@@ -110,8 +110,9 @@ class _NileSource(_StoreSource):
 
 def get_games() -> Generator[Game]:
     """Installed Heroic games."""
+    hidden = set(_hidden_app_names())
     for source in _LegendarySource, _GOGSource, _NileSource, _SideloadSource:
-        yield from _games_from(source)
+        yield from _games_from(source, hidden)
 
 
 def _config_dir() -> Path:
@@ -135,7 +136,7 @@ def _hidden_app_names() -> Generator[str]:
                 yield game["appName"]
 
 
-def _games_from(source: type[_Source]) -> Generator[Game]:
+def _games_from(source: type[_Source], hidden: set[str]) -> Generator[Game]:
     try:
         with (_config_dir() / source.library_path()).open() as fp:
             library = json.load(fp)
@@ -149,7 +150,6 @@ def _games_from(source: type[_Source]) -> Generator[Game]:
     images_cache = _config_dir() / "images-cache"
 
     installed = source.installed_app_names()
-    hidden = set(_hidden_app_names())
 
     for entry in library:
         with suppress(TypeError, KeyError):

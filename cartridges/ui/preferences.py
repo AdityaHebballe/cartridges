@@ -29,7 +29,7 @@ class Preferences(Adw.PreferencesDialog):
     sgdb_prefer_switch: Adw.SwitchRow = Gtk.Template.Child()
     sgdb_animated_switch: Adw.SwitchRow = Gtk.Template.Child()
     update_button: Gtk.Button = Gtk.Template.Child()
-    spinner: Gtk.Spinner = Gtk.Template.Child()
+    spinner: Adw.Spinner = Gtk.Template.Child()
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)

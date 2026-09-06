@@ -17,7 +17,8 @@ from cartridges.games import Game
 from . import closures
 from .collections import CollectionActions, CollectionsBox
 from .cover import Cover  # noqa: F401
-from .games import GameActions, GameEditable
+_DOWNSCALE_CACHE_LIMIT = 50
+_downscale_cache: dict[tuple[int, int], Gdk.Texture] = {}
 
 
 @Gtk.Template(resource_path=f"{PREFIX}/game-details.ui")
@@ -139,10 +140,25 @@ class GameDetails(Adw.NavigationPage):
     @Gtk.Template.Callback()
     @staticmethod
     def _downscale(this: Gtk.Widget, cover: Gdk.Paintable | None) -> Gdk.Texture | None:
-        if cover and (renderer := cast(Gtk.Native, this.props.root).get_renderer()):
-            cover.snapshot(snapshot := Gtk.Snapshot(), 3, 3)
-            if node := snapshot.to_node():
-                return renderer.render_texture(node)
+        if not cover or not this.props.root:
+            return None
+
+        renderer = cast(Gtk.Native, this.props.root).get_renderer()
+        if not renderer:
+            return None
+
+        cache_key = (id(cover), id(renderer))
+        if tex := _downscale_cache.get(cache_key):
+            return tex
+
+        cover.snapshot(snapshot := Gtk.Snapshot(), 3, 3)
+        if node := snapshot.to_node():
+            tex = renderer.render_texture(node)
+            if tex:
+                if len(_downscale_cache) >= _DOWNSCALE_CACHE_LIMIT:
+                    _downscale_cache.pop(next(iter(_downscale_cache)))
+                _downscale_cache[cache_key] = tex
+            return tex
 
         return None
 

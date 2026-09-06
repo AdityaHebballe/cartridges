@@ -107,11 +107,39 @@ class _AppInfo(NamedTuple):
         return cls(common.get("type"), developer, capsule)
 
 
+_appinfo_cache: tuple[Path, float, int, dict[str, _AppInfo]] | None = None
+
+
+def _get_appinfo(path: Path) -> dict[str, _AppInfo]:
+    global _appinfo_cache
+    try:
+        stat = path.stat()
+    except OSError:
+        return {}
+
+    if (
+        _appinfo_cache is not None
+        and _appinfo_cache[0] == path
+        and _appinfo_cache[1] == stat.st_mtime
+        and _appinfo_cache[2] == stat.st_size
+    ):
+        return _appinfo_cache[3]
+
+    try:
+        with path.open("rb") as fp:
+            parsed = dict(_parse_appinfo_vdf(fp))
+            _appinfo_cache = (path, stat.st_mtime, stat.st_size, parsed)
+            return parsed
+    except Exception as e:
+        _logger.debug("Failed to read or parse appinfo.vdf at %s: %s", path, e)
+        return {}
+
+
 def get_games() -> Generator[Game]:
     """Installed Steam games."""
     librarycache = _data_dir() / "appcache" / "librarycache"
-    with (_data_dir() / "appcache" / "appinfo.vdf").open("rb") as fp:
-        appinfo = defaultdict(_AppInfo, _parse_appinfo_vdf(fp))
+    vdf_path = _data_dir() / "appcache" / "appinfo.vdf"
+    appinfo = defaultdict(_AppInfo, _get_appinfo(vdf_path))
 
     appids = set()
     for manifest in _manifests():

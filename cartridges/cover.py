@@ -174,20 +174,25 @@ def save_cover(game_id: str, image_bytes: bytes, ext: str | None = None) -> Path
 
         if is_anim and (im.width > WIDTH or im.height > HEIGHT):
             from PIL import ImageSequence
-            frames = [
-                frame.copy().resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
-                for frame in ImageSequence.Iterator(im)
-            ]
-            duration = im.info.get("duration") or 50
+
+            frames = []
+            durations = []
+            default_dur = im.info.get("duration") or 50
+            for frame in ImageSequence.Iterator(im):
+                frames.append(frame.copy().resize((WIDTH, HEIGHT), Image.Resampling.BILINEAR))
+                durations.append(frame.info.get("duration", default_dur))
+
             save_fmt = "WEBP" if fmt == "webp" else "GIF"
-            frames[0].save(
-                target_path,
-                format=save_fmt,
-                save_all=True,
-                append_images=frames[1:],
-                duration=duration,
-                loop=0,
-            )
+            save_kwargs = {
+                "format": save_fmt,
+                "save_all": True,
+                "append_images": frames[1:],
+                "loop": 0,
+            }
+            if durations:
+                save_kwargs["duration"] = durations if len(set(durations)) > 1 else durations[0]
+
+            frames[0].save(target_path, **save_kwargs)
         else:
             target_path.write_bytes(image_bytes)
 

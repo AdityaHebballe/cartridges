@@ -55,7 +55,7 @@ class Application(Adw.Application):
 
     def _auto_fetch_covers(self):
         from . import SETTINGS, steamgriddb
-        from .cover import for_game
+        from .cover import has_cover
 
         if not steamgriddb.is_enabled():
             return
@@ -65,7 +65,7 @@ class Application(Adw.Application):
         for src in sources.model:
             for i in range(src.get_n_items()):
                 if g := src.get_item(i):
-                    if not for_game(g.game_id) and (prefer_sgdb or not g.cover):
+                    if not has_cover(g.game_id) and (prefer_sgdb or not g.cover):
                         missing.append(g)
 
         if missing:

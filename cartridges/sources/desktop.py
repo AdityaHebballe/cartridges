@@ -110,21 +110,23 @@ def _game_from(path: Path) -> Game:
         if not _try_exec(file.get_string("Desktop Entry", "TryExec")):
             raise ValueError
 
-    try:
-        icon_name = file.get_string("Desktop Entry", "Icon")
-    except GLib.Error:
-        icon_name = _ICON_FALLBACK
+    game_id = f"{ID}_{path.stem}"
+    game_cover = cover.for_game(game_id)
+    if game_cover is None:
+        try:
+            icon_name = file.get_string("Desktop Entry", "Icon")
+        except GLib.Error:
+            icon_name = _ICON_FALLBACK
 
-    icon = _icon_theme().lookup_icon(
-        icon_name,
-        fallbacks=(_ICON_FALLBACK,),
-        size=cover.ICON_SIZE,
-        # Sources shouldn't know about the user's display,
-        # so we assume 2x scaling and render the icon at the correct size later.
-        scale=2,
-        direction=Gtk.TextDirection.NONE,
-        flags=Gtk.IconLookupFlags.NONE,
-    )
+        icon = _icon_theme().lookup_icon(
+            icon_name,
+            fallbacks=(_ICON_FALLBACK,),
+            size=cover.ICON_SIZE,
+            scale=2,
+            direction=Gtk.TextDirection.NONE,
+            flags=Gtk.IconLookupFlags.NONE,
+        )
+        game_cover = cover.from_icon(icon)
 
     try:
         real_path = Path("/", path.relative_to("/run/host"))
@@ -133,10 +135,10 @@ def _game_from(path: Path) -> Game:
 
     return Game(
         executable=f"gio launch {shlex.quote(str(real_path))}",
-        game_id=f"{ID}_{path.stem}",
+        game_id=game_id,
         source=ID,
         name=file.get_string("Desktop Entry", "Name"),
-        cover=cover.for_game(f"{ID}_{path.stem}") or cover.from_icon(icon),
+        cover=game_cover,
     )
 
 
@@ -160,8 +162,14 @@ def _try_exec(executable: str) -> bool:
 
 @functools.cache
 def _icon_theme() -> Gtk.IconTheme:
-    icon_theme = Gtk.IconTheme()
-    search_path = icon_theme.props.search_path or []
-    search_path += [str(path) for path in _ICON_PATHS if path not in search_path]
+    from gi.repository import Gdk
+
+    display = Gdk.Display.get_default()
+    icon_theme = Gtk.IconTheme.get_for_display(display) if display else Gtk.IconTheme()
+    search_path = list(icon_theme.props.search_path or [])
+    for path in _ICON_PATHS:
+        p_str = str(path)
+        if p_str not in search_path:
+            search_path.append(p_str)
     icon_theme.props.search_path = search_path
     return icon_theme
