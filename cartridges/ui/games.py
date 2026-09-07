@@ -42,7 +42,7 @@ class GameActions(Gio.SimpleActionGroup):
             ("add", lambda *_: add()),
             ("edit", lambda *_: edit(self.game)),
             ("change-cover", lambda *_: change_cover(self.game)),
-            ("play", lambda *_: self.game.play()),
+            ("play", lambda *_: self._play()),
             ("hide", lambda *_: hide(self.game)),
             ("unhide", lambda *_: unhide(self.game)),
             ("remove", lambda *_: remove(self.game)),
@@ -69,6 +69,12 @@ class GameActions(Gio.SimpleActionGroup):
         Gtk.TryExpression.new((hidden, false)).bind(unhide_action, "enabled", self)
         Gtk.TryExpression.new((not_hidden, false)).bind(hide_action, "enabled", self)
         Gtk.TryExpression.new((not_removed, false)).bind(remove_action, "enabled", self)
+
+    def _play(self):
+        if not self.game:
+            return
+        self.game.play()
+        sorter.changed(Gtk.SorterChange.DIFFERENT)
 
 
 class GameEditable(GObject.Object):
@@ -106,6 +112,7 @@ class GameEditable(GObject.Object):
             self.game.name = self.name
             sorter.changed(Gtk.SorterChange.DIFFERENT)
         self.game.developer = self.developer
+        self.game.save()
 
 
 def add():

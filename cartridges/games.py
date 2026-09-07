@@ -6,6 +6,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from shlex import quote
 from types import UnionType
@@ -16,6 +17,34 @@ from gi.repository import Gdk, Gio, GObject
 from . import DATA_DIR
 
 GAMES_DIR = DATA_DIR / "games"
+LAST_PLAYED_FILE = DATA_DIR / "last_played.json"
+
+
+def get_last_played_times() -> dict[str, int]:
+    """Get mapping of game_id to last played unix timestamp."""
+    try:
+        if LAST_PLAYED_FILE.is_file():
+            with LAST_PLAYED_FILE.open(encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return {k: int(v) for k, v in data.items() if isinstance(v, (int, float))}
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {}
+
+
+def record_last_played(game_id: str, timestamp: int):
+    """Record last played unix timestamp for a game."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    times = get_last_played_times()
+    times[game_id] = int(timestamp)
+    try:
+        temp_file = LAST_PLAYED_FILE.with_suffix(".tmp")
+        with temp_file.open("w", encoding="utf-8") as f:
+            json.dump(times, f, indent=2)
+        temp_file.replace(LAST_PLAYED_FILE)
+    except OSError:
+        pass
 
 
 class _GameProp(NamedTuple):
@@ -96,6 +125,12 @@ class Game(Gio.SimpleActionGroup):
             start_new_session=True,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
+
+        now = int(time.time())
+        self.last_played = now
+        record_last_played(self.game_id, now)
+        if self.source == "imported":
+            self.save()
 
         from cartridges import SETTINGS
 

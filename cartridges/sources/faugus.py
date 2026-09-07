@@ -64,11 +64,24 @@ def get_games() -> Generator[Game]:
 
         executable = f"faugus-launcher --game {shlex.quote(gameid)}"
 
+        prefix = entry.get("prefix")
+        last_played = int(entry.get("last_played", 0)) if isinstance(entry.get("last_played"), (int, float)) else 0
+        if prefix:
+            reg = Path(prefix) / "user.reg"
+            if not reg.is_file():
+                reg = Path(prefix) / "system.reg"
+            if reg.is_file():
+                try:
+                    last_played = max(last_played, int(reg.stat().st_mtime))
+                except OSError:
+                    pass
+
         yield Game(
             executable=executable,
             game_id=game_id,
             source=ID,
             hidden=bool(entry.get("hidden", False)),
+            last_played=last_played,
             name=title,
             cover=game_cover,
         )

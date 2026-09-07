@@ -114,9 +114,11 @@ class Source(GObject.Object, Gio.ListModel[Game]):
 
     def _get_games(self, added: int) -> Generator[Game]:
         from cartridges import SETTINGS
+        from cartridges.games import get_last_played_times
 
         hidden_games = set(SETTINGS.get_strv("hidden-games"))
         unhidden_games = set(SETTINGS.get_strv("unhidden-games"))
+        last_played_times = get_last_played_times()
 
         for game in self._module.get_games():
             game.added = game.added or added
@@ -124,6 +126,8 @@ class Source(GObject.Object, Gio.ListModel[Game]):
                 game.hidden = True
             elif game.game_id in unhidden_games:
                 game.hidden = False
+            if saved_lp := last_played_times.get(game.game_id):
+                game.last_played = max(game.last_played or 0, saved_lp)
             yield game
 
 
@@ -191,16 +195,26 @@ def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | Non
     """
     all_added: set[str] = set()
     all_removed: set[str] = set()
+    changed_order = False
     now = int(time.time())
     source_items = list(all_sources.items())
 
     def step(idx: int) -> bool:
+        nonlocal changed_order
         if idx >= len(source_items):
             all_games: list[Game] = []
             for s in all_sources.values():
                 for i in range(s.get_n_items()):
                     if g := s.get_item(i):
                         all_games.append(g)
+
+            if changed_order:
+                try:
+                    from cartridges.ui.games import sorter
+                    from gi.repository import Gtk
+                    sorter.changed(Gtk.SorterChange.DIFFERENT)
+                except Exception:
+                    pass
 
             if on_done:
                 on_done(all_games, all_added, all_removed)
@@ -220,6 +234,7 @@ def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | Non
             removed_ids = set(existing_by_id) - set(scanned_by_id)
             if removed_ids:
                 all_removed.update(removed_ids)
+                changed_order = True
                 for i in reversed(range(len(src._games))):
                     if src._games[i].game_id in removed_ids:
                         src._games.pop(i)
@@ -231,6 +246,7 @@ def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | Non
                 new_g = scanned_by_id[gid]
                 if old_g.last_played != new_g.last_played:
                     old_g.last_played = new_g.last_played
+                    changed_order = True
                 if not old_g.cover and new_g.cover:
                     old_g.cover = new_g.cover
 
@@ -238,6 +254,7 @@ def reload_async(on_done: Callable[[list[Game], set[str], set[str]], None] | Non
             added_ids = set(scanned_by_id) - set(existing_by_id)
             if added_ids:
                 all_added.update(added_ids)
+                changed_order = True
                 for gid in added_ids:
                     new_g = scanned_by_id[gid]
                     pos = len(src._games)
