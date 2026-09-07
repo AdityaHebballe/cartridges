@@ -110,7 +110,7 @@ class _AppInfo(NamedTuple):
 _appinfo_cache: tuple[Path, float, int, dict[str, _AppInfo]] | None = None
 
 
-def _get_appinfo(path: Path) -> dict[str, _AppInfo]:
+def _get_appinfo(path: Path, target_appids: set[str] | None = None) -> dict[str, _AppInfo]:
     global _appinfo_cache
     try:
         stat = path.stat()
@@ -123,52 +123,60 @@ def _get_appinfo(path: Path) -> dict[str, _AppInfo]:
         and _appinfo_cache[1] == stat.st_mtime
         and _appinfo_cache[2] == stat.st_size
     ):
-        return _appinfo_cache[3]
+        cached = _appinfo_cache[3]
+        if target_appids is None or target_appids.issubset(cached.keys()):
+            return cached
+    else:
+        cached = {}
 
     try:
+        needed = target_appids - set(cached.keys()) if target_appids is not None else None
         with path.open("rb") as fp:
-            parsed = dict(_parse_appinfo_vdf(fp))
-            _appinfo_cache = (path, stat.st_mtime, stat.st_size, parsed)
-            return parsed
+            for appid, info in _parse_appinfo_vdf(fp, needed):
+                cached[appid] = info
+            _appinfo_cache = (path, stat.st_mtime, stat.st_size, cached)
+            return cached
     except Exception as e:
         _logger.debug("Failed to read or parse appinfo.vdf at %s: %s", path, e)
-        return {}
+        return cached
 
 
 def get_games() -> Generator[Game]:
     """Installed Steam games."""
     librarycache = _data_dir() / "appcache" / "librarycache"
     vdf_path = _data_dir() / "appcache" / "appinfo.vdf"
-    appinfo = defaultdict(_AppInfo, _get_appinfo(vdf_path))
 
-    appids = set()
+    installed_apps: dict[str, _App] = {}
     for manifest in _manifests():
         try:
             name, appid, stateflags, lastplayed = _App.from_manifest(manifest)
         except ValueError:
             continue
 
-        duplicate = appid in appids
         installed = (
             int(stateflags) & _MANIFEST_INSTALLED_MASK
             if stateflags and stateflags.isdigit()
             else True
         )
 
-        if duplicate or not installed:
+        if not installed or appid in installed_apps:
             continue
 
+        installed_apps[appid] = _App(name, appid, stateflags, lastplayed)
+
+    appinfo = defaultdict(_AppInfo, _get_appinfo(vdf_path, set(installed_apps.keys())))
+
+    for appid, app in installed_apps.items():
         type_, developer, capsule = appinfo[appid]
         if type_ and (type_.lower() not in _RELEVANT_TYPES):
             continue
 
-        appids.add(appid)
         yield Game(
             executable=f"{OPEN} steam://rungameid/{appid}",
             game_id=f"{ID}_{appid}",
             source=ID,
-            last_played=int(lastplayed) if lastplayed and lastplayed.isdigit() else 0,
-            name=name,
+            last_played=int(app.lastplayed) if app.lastplayed and app.lastplayed.isdigit() else 0,
+            name=app.name,
             developer=developer,
             cover=cover.for_game(f"{ID}_{appid}")
             or _find_cover(librarycache / appid, capsule),
@@ -205,7 +213,9 @@ def _manifests() -> Generator[Path]:
     )
 
 
-def _parse_appinfo_vdf(fp: BinaryIO) -> Generator[tuple[str, _AppInfo]]:
+def _parse_appinfo_vdf(
+    fp: BinaryIO, target_appids: set[str] | None = None
+) -> Generator[tuple[str, _AppInfo]]:
     if fp.read(4) != _APPINFO_MAGIC:
         _logger.warning("Magic number mismatch, parsing appinfo.vdf will likely fail.")
 
@@ -216,9 +226,28 @@ def _parse_appinfo_vdf(fp: BinaryIO) -> Generator[tuple[str, _AppInfo]]:
     table = tuple(_read_string(fp) for _ in range(struct.unpack("<I", fp.read(4))[0]))
 
     fp.seek(offset)
-    while appid := struct.unpack("<I", fp.read(4))[0]:
-        fp.seek(64, SEEK_CUR)
-        yield str(appid), _AppInfo.from_vdf(fp, table)
+    while True:
+        appid_b = fp.read(4)
+        if not appid_b or len(appid_b) < 4:
+            break
+        appid = struct.unpack("<I", appid_b)[0]
+        if appid == 0:
+            break
+
+        size_b = fp.read(4)
+        if not size_b or len(size_b) < 4:
+            break
+        size = struct.unpack("<I", size_b)[0]
+
+        str_appid = str(appid)
+        if target_appids is None or str_appid in target_appids:
+            fp.seek(60, SEEK_CUR)
+            yield str_appid, _AppInfo.from_vdf(fp, table)
+        elif 0 < size < 50_000_000:
+            fp.seek(size, SEEK_CUR)
+        else:
+            fp.seek(60, SEEK_CUR)
+            yield str_appid, _AppInfo.from_vdf(fp, table)
 
 
 def _load_binary_vdf(
@@ -246,12 +275,23 @@ def _read_string(fp: BinaryIO, *, wide: bool = False) -> str:
 
 
 def _find_cover(path: Path, capsule: str | None = None) -> Gdk.Paintable | None:
-    paths = [*itertools.chain.from_iterable(path.rglob(p) for p in _CAPSULE_NAMES)]
-    if capsule:
-        paths.insert(0, path / capsule)
+    if not path.is_dir():
+        return None
 
-    for p in paths:
-        if c := cover.at_path(p):
+    if capsule and (c := cover.at_path(path / capsule)):
+        return c
+
+    for name in _CAPSULE_NAMES:
+        if (p := path / name).is_file() and (c := cover.at_path(p)):
             return c
+
+    try:
+        for sub in path.iterdir():
+            if sub.is_dir():
+                for name in _CAPSULE_NAMES:
+                    if (p := sub / name).is_file() and (c := cover.at_path(p)):
+                        return c
+    except OSError:
+        pass
 
     return None

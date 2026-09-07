@@ -79,8 +79,12 @@ def get_games() -> Generator[Game]:
             continue
 
         try:
+            with path.open("rb") as f:
+                data = f.read()
+            if b"Game" not in data:
+                continue
             game = _game_from(path)
-        except (GLib.Error, ValueError):
+        except (OSError, GLib.Error, ValueError):
             continue
 
         yield game
