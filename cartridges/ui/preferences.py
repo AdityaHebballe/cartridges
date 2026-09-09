@@ -17,6 +17,7 @@ class Preferences(Adw.PreferencesDialog):
     __gtype_name__ = __qualname__
 
     exit_after_launch_switch: Adw.SwitchRow = Gtk.Template.Child()
+    gamepad_layout_row: Adw.ComboRow = Gtk.Template.Child()
 
     steam_switch: Adw.SwitchRow = Gtk.Template.Child()
     faugus_switch: Adw.SwitchRow = Gtk.Template.Child()
@@ -56,6 +57,24 @@ class Preferences(Adw.PreferencesDialog):
         SETTINGS.bind("sgdb", self.sgdb_switch, "active", flags)
         SETTINGS.bind("sgdb-prefer", self.sgdb_prefer_switch, "active", flags)
         SETTINGS.bind("sgdb-animated", self.sgdb_animated_switch, "active", flags)
+
+        layout_values = ["auto", "xbox", "nintendo", "playstation"]
+        layout_model = Gtk.StringList.new([
+            _("Automatic"),
+            _("Xbox"),
+            _("Nintendo Switch"),
+            _("PlayStation"),
+        ])
+        self.gamepad_layout_row.props.model = layout_model
+        current_layout = SETTINGS.get_string("gamepad-layout")
+        if current_layout in layout_values:
+            self.gamepad_layout_row.set_selected(layout_values.index(current_layout))
+        self.gamepad_layout_row.connect(
+            "notify::selected",
+            lambda row, *_: SETTINGS.set_string(
+                "gamepad-layout", layout_values[row.get_selected()]
+            ),
+        )
 
         self.key_entry.props.text = SETTINGS.get_string("sgdb-key")
 

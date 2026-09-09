@@ -17,6 +17,15 @@ template $Preferences: Adw.PreferencesDialog {
         subtitle: _("Close Cartridges after opening a game");
       }
     }
+
+    Adw.PreferencesGroup {
+      title: _("Gamepad");
+
+      Adw.ComboRow gamepad_layout_row {
+        title: _("Controller Layout");
+        subtitle: _("Choose button layout for controller navigation");
+      }
+    }
   }
 
   Adw.PreferencesPage {

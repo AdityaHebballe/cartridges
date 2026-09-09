@@ -60,27 +60,98 @@ class Gamepad(GObject.Object):
         self._allowed_inputs.remove(direction)
         GLib.timeout_add(REPEAT_DELAY, lambda *_: self._allowed_inputs.add(direction))
 
+    def _get_active_layout(self) -> str:
+        from cartridges import SETTINGS
+
+        try:
+            setting = SETTINGS.get_string("gamepad-layout")
+        except Exception:
+            setting = "auto"
+
+        if setting in ("xbox", "nintendo", "playstation"):
+            return setting
+
+        # Automatic detection based on connected device name/guid
+        if self.device:
+            name = (self.device.get_name() or "").lower()
+            guid = (self.device.get_guid() or "").lower()
+            if "switch" in name or "nintendo" in name or "057e" in guid:
+                return "nintendo"
+            if (
+                "playstation" in name
+                or "dualshock" in name
+                or "dualsense" in name
+                or "054c" in guid
+            ):
+                return "playstation"
+
+        return "xbox"
+
     def _on_button_press_event(self, _device: Manette.Device, event: Manette.Event):
         _success, button = event.get_button()
-        hw_code = event.get_hardware_code()
-        codes = {button, hw_code} if _success else {hw_code}
+        if not _success:
+            return
 
-        if codes & {304, 288, 0}:  # A / South (Play / Select)
-            self._on_activate_button_pressed()
-        elif codes & {305, 289, 1}:  # B / East (Back / Return)
-            self._on_return_button_pressed()
-        elif codes & {308, 290, 2, 315, 297, 7}:  # X / West / Menu (Game Details)
-            self._on_details_button_pressed()
-        elif codes & {307, 291, 3}:  # Y / North (Search)
-            self.window.search_entry.grab_focus()
-        elif codes & {544}:
+        # D-pad buttons (handled identically across all layouts)
+        # 544..547 (BTN_DPAD_*), 704..707 (BTN_TRIGGER_HAPPY*)
+        if button in (544, 704):
             self._move_vertically(Gtk.DirectionType.UP)
-        elif codes & {545}:
+            return
+        elif button in (545, 705):
             self._move_vertically(Gtk.DirectionType.DOWN)
-        elif codes & {546}:
+            return
+        elif button in (546, 706):
             self._move_horizontally(Gtk.DirectionType.LEFT)
-        elif codes & {547}:
+            return
+        elif button in (547, 707):
             self._move_horizontally(Gtk.DirectionType.RIGHT)
+            return
+
+        # Select / Start
+        if button == 314:  # Select / Back / -
+            self._on_return_button_pressed()
+            return
+        elif button == 315:  # Start / Menu / +
+            self._on_details_button_pressed()
+            return
+
+        layout = self._get_active_layout()
+
+        # Face buttons:
+        # 304 = BTN_SOUTH (Bottom button)
+        # 305 = BTN_EAST  (Right button)
+        # 307 = BTN_NORTH (Top button)
+        # 308 = BTN_WEST  (Left button)
+        if layout == "nintendo":
+            # Nintendo layout:
+            # A is East (305) -> Play / Confirm
+            # B is South (304) -> Back / Return
+            # X is North (307) -> Details
+            # Y is West (308) -> Search
+            match button:
+                case 305:  # A (East)
+                    self._on_activate_button_pressed()
+                case 304:  # B (South)
+                    self._on_return_button_pressed()
+                case 307:  # X (North)
+                    self._on_details_button_pressed()
+                case 308:  # Y (West)
+                    self.window.search_entry.grab_focus()
+        else:
+            # Xbox / PlayStation layout:
+            # A / Cross is South (304) -> Play / Confirm
+            # B / Circle is East (305) -> Back / Return
+            # X / Square is West (308) -> Details
+            # Y / Triangle is North (307) -> Search
+            match button:
+                case 304:  # A / Cross (South)
+                    self._on_activate_button_pressed()
+                case 305:  # B / Circle (East)
+                    self._on_return_button_pressed()
+                case 308:  # X / Square (West)
+                    self._on_details_button_pressed()
+                case 307:  # Y / Triangle (North)
+                    self.window.search_entry.grab_focus()
 
     def _on_analog_axis_event(self, _device: Manette.Device, event: Manette.Event):
         _, axis, value = event.get_absolute()
@@ -88,7 +159,7 @@ class Gamepad(GObject.Object):
             return
 
         match axis:
-            case 0:
+            case 0 | 16:  # Left stick X or ABS_HAT0X
                 direction = (
                     Gtk.DirectionType.LEFT if value < 0 else Gtk.DirectionType.RIGHT
                 )
@@ -96,7 +167,7 @@ class Gamepad(GObject.Object):
                 if direction in self._allowed_inputs:
                     self._lock_input(direction)
                     self._move_horizontally(direction)
-            case 1:
+            case 1 | 17:  # Left stick Y or ABS_HAT0Y
                 direction = (
                     Gtk.DirectionType.UP if value < 0 else Gtk.DirectionType.DOWN
                 )
