@@ -35,6 +35,7 @@ class GameDetails(Adw.NavigationPage):
     collection_actions: CollectionActions = Gtk.Template.Child()
     game_editable: GameEditable = Gtk.Template.Child()
     game_signals: GObject.SignalGroup = Gtk.Template.Child()
+    play_button: Gtk.Button = Gtk.Template.Child()
 
     game = GObject.Property(type=Game)
     editing = GObject.Property(type=bool, default=False)

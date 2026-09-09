@@ -42,6 +42,9 @@ class Gamepad(GObject.Object):
         self._device_signals.connect_closure(
             "absolute-axis-event", self._on_analog_axis_event, after=False
         )
+        self._device_signals.connect_closure(
+            "hat-axis-event", self._on_hat_axis_event, after=False
+        )
 
         self.bind_property("device", self._device_signals, "target")
 
@@ -59,31 +62,25 @@ class Gamepad(GObject.Object):
 
     def _on_button_press_event(self, _device: Manette.Device, event: Manette.Event):
         _success, button = event.get_button()
-        match button:  # Xbox / Nintendo / PlayStation
-            case 304:  # A / B / Circle
-                self._on_activate_button_pressed()
-            case 305:  # B / A / Cross
-                self._on_return_button_pressed()
-            case 307:  # Y / X / Triangle
-                self.window.search_entry.grab_focus()
-            case 308:  # X / Y / Square
-                pass
-            case 310:  # Left Shoulder Button
-                pass
-            case 311:  # Right Shoulder Button
-                pass
-            case 314:  # Back / - / Options
-                pass
-            case 315:  # Start / + / Share
-                pass
-            case 544:
-                self._move_vertically(Gtk.DirectionType.UP)
-            case 545:
-                self._move_vertically(Gtk.DirectionType.DOWN)
-            case 546:
-                self._move_horizontally(Gtk.DirectionType.LEFT)
-            case 547:
-                self._move_horizontally(Gtk.DirectionType.RIGHT)
+        hw_code = event.get_hardware_code()
+        codes = {button, hw_code} if _success else {hw_code}
+
+        if codes & {304, 288, 0}:  # A / South (Play / Select)
+            self._on_activate_button_pressed()
+        elif codes & {305, 289, 1}:  # B / East (Back / Return)
+            self._on_return_button_pressed()
+        elif codes & {308, 290, 2, 315, 297, 7}:  # X / West / Menu (Game Details)
+            self._on_details_button_pressed()
+        elif codes & {307, 291, 3}:  # Y / North (Search)
+            self.window.search_entry.grab_focus()
+        elif codes & {544}:
+            self._move_vertically(Gtk.DirectionType.UP)
+        elif codes & {545}:
+            self._move_vertically(Gtk.DirectionType.DOWN)
+        elif codes & {546}:
+            self._move_horizontally(Gtk.DirectionType.LEFT)
+        elif codes & {547}:
+            self._move_horizontally(Gtk.DirectionType.RIGHT)
 
     def _on_analog_axis_event(self, _device: Manette.Device, event: Manette.Event):
         _, axis, value = event.get_absolute()
@@ -107,24 +104,78 @@ class Gamepad(GObject.Object):
                     self._lock_input(direction)
                     self._move_vertically(direction)
 
+    def _on_hat_axis_event(self, _device: Manette.Device, event: Manette.Event):
+        _success, axis, value = event.get_hat()
+        if not _success or value == 0:
+            return
+
+        match axis:
+            case 0:
+                direction = (
+                    Gtk.DirectionType.LEFT if value < 0 else Gtk.DirectionType.RIGHT
+                )
+                if direction in self._allowed_inputs:
+                    self._lock_input(direction)
+                    self._move_horizontally(direction)
+            case 1:
+                direction = (
+                    Gtk.DirectionType.UP if value < 0 else Gtk.DirectionType.DOWN
+                )
+                if direction in self._allowed_inputs:
+                    self._lock_input(direction)
+                    self._move_vertically(direction)
+
+    def _launch_focused_game(self) -> bool:
+        if (game_widget := self._get_focused_game()) and isinstance(
+            item := game_widget.get_first_child(), GameItem
+        ) and item.game:
+            item.activate_action("game.play")
+            return True
+        return False
+
+    def _on_details_button_pressed(self):
+        if self._can_navigate_games_page():
+            self.window._show_details(self.window.grid, self._get_current_position())
+        elif self.window.navigation_view.props.visible_page_tag == "details":
+            if not self.window.details.editing:
+                self.window.details.edit()
+
+    def _activate_widget(self, widget: Gtk.Widget):
+        if isinstance(widget, Gtk.Button):
+            widget.emit("clicked")
+        elif isinstance(widget, Gtk.MenuButton):
+            widget.set_active(not widget.props.active)
+        else:
+            widget.activate()
+
     def _on_activate_button_pressed(self):
+        if self.window.props.visible_dialog:
+            if focus_widget := self.window.props.focus_widget:
+                self._activate_widget(focus_widget)
+            return
+
         if self.window.navigation_view.props.visible_page_tag == "details":
             if focus_widget := self.window.props.focus_widget:
-                focus_widget.activate()
+                self._activate_widget(focus_widget)
             return
 
         if self._is_focused_on_top_bar() and (
             focus_widget := self.window.props.focus_widget
         ):
-            if isinstance(focus_widget, Gtk.ToggleButton):
-                focus_widget.props.active = True
-                return
-
-            focus_widget.activate()
+            self._activate_widget(focus_widget)
             return
 
+        if self.window.sidebar.get_focus_child():
+            if focus_widget := self.window.props.focus_widget:
+                self._activate_widget(focus_widget)
+            return
+
+        if self._can_navigate_games_page():
+            if self._launch_focused_game():
+                return
+
         if focus_widget := self.window.props.focus_widget:
-            focus_widget.activate()
+            self._activate_widget(focus_widget)
 
     def _on_return_button_pressed(self):
         if self.window.navigation_view.props.visible_page_tag == "details":
@@ -137,6 +188,9 @@ class Gamepad(GObject.Object):
                 return
 
             self.window.navigation_view.pop_to_tag("games")
+            self.window.grid.grab_focus()
+            self.window.props.focus_visible = True
+            return
 
         if isinstance(dialog := self.window.props.visible_dialog, CollectionDetails):
             dialog.close()
@@ -152,16 +206,14 @@ class Gamepad(GObject.Object):
         grid_visible = self.window.view_stack.props.visible_child_name == "grid"
         if self._is_focused_on_top_bar():
             focus_widget = self.window.grid if grid_visible else self.window.sidebar
-
-        # If the grid is not visible (i.e.  no search results or imports)
-        # the search bar is focused as a fallback.
-        focus_widget = (
-            self.window.search_entry
-            if not grid_visible
-            else self.window.grid
-            if self.window.sidebar.get_focus_child()
-            else self.window.sidebar
-        )
+        else:
+            focus_widget = (
+                self.window.search_entry
+                if not grid_visible
+                else self.window.grid
+                if self.window.sidebar.get_focus_child()
+                else self.window.sidebar
+            )
 
         focus_widget.grab_focus()
         self.window.props.focus_visible = True
@@ -169,6 +221,7 @@ class Gamepad(GObject.Object):
     def _navigate_to_game_position(self, new_pos: int):
         if new_pos >= 0 and new_pos <= self._n_grid_games() - 1:
             self.window.grid.scroll_to(new_pos, Gtk.ListScrollFlags.FOCUS, None)
+            self.window.props.focus_visible = True
         else:
             self.window.props.display.beep()
 

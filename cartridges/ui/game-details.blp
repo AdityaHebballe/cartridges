@@ -106,6 +106,7 @@ template $GameDetails: Adw.NavigationPage {
                 valign: end;
                 margin-end: 8;
                 margin-bottom: 8;
+                can-focus: false;
 
                 styles [
                   "circular",
@@ -180,7 +181,7 @@ template $GameDetails: Adw.NavigationPage {
                     spacing: 12;
                     margin-top: 15;
 
-                    Button {
+                    Button play_button {
                       action-name: "game.play";
                       label: _("Play");
                       valign: center;

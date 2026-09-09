@@ -205,6 +205,7 @@ class Window(Adw.ApplicationWindow):
         model = cast(Gio.ListModel[Game], grid.props.model)
         self.details.game = model.get_item(position)
         self.navigation_view.push_by_tag("details")
+        self.details.play_button.grab_focus()
 
     @Gtk.Template.Callback()
     def _search_started(self, entry: Gtk.SearchEntry):
